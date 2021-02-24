@@ -14,3 +14,8 @@ modules/__pycache__/prediction.cpython-38.pyc
 modules/__pycache__/sequence_modeling.cpython-38.pyc
 modules/__pycache__/transformation.cpython-38.pyc
 TPS-ResNet-BiLSTM-Attn-case-sensitive.pth
+__pycache__/config.cpython-38.pyc
+modules/__pycache__/bert_sequence.cpython-38.pyc
+modules/__pycache__/init_generation.cpython-38.pyc
+modules/__pycache__/hidden_state.cpython-38.pyc
+results/config_test_training_log.csv
