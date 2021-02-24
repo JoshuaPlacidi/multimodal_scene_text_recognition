@@ -1,15 +1,16 @@
+import config
 import torch
 import torch.nn as nn
 import torch.utils.data
 import torch.nn.functional as F
 torch.backends.cudnn.enabled = False
-from transformers import BertTokenizer, BertModel
 
 from utils import AttnLabelConverter
 import string, json
 
 from modules.transformation import TPS_SpatialTransformerNetwork
 from modules.feature_extraction import VGG_FeatureExtractor,RCNN_FeatureExtractor, ResNet_FeatureExtractor
+from modules.init_generation import Random_Initilisation, Zero_Initilisation, Bert_Initilisation, Frequency_Initilisation
 from modules.sequence_modeling import BidirectionalLSTM
 from modules.prediction import Attention
 
@@ -64,12 +65,15 @@ class Model(nn.Module):
             raise Exception('No FeatureExtraction module specified')
         self.FeatureExtraction_output = output_channel  # int(imgH/16-1) * 512
         self.AdaptiveAvgPool = nn.AdaptiveAvgPool2d((None, 1))  # Transform final (imgH/16-1) -> 1
-        
-        self.combined_fc1 = nn.Linear(972, 500)
-        self.combined_fc2 = nn.Linear(1065, 500)
 
-        self.combined_fc3 = nn.Linear(500, 256)
-        self.combined_fc4 = nn.Linear(500, 256)
+        if config.ANNOTATION == 'ZERO':
+            self.init_generation = Zero_Initilisation()
+        elif config.ANNOTATION == 'RAND':
+            self.init_generation = Random_Initilisation()
+        elif config.ANNOTATION == 'BERT':
+            self.init_generation = Bert_Initilisation()
+        elif config.ANNOTATION == 'FREQ':
+            self.init_generation = Frequency_Initilisation()
 
         """ Sequence modeling"""
         self.SequenceModeling = nn.Sequential(
@@ -80,9 +84,8 @@ class Model(nn.Module):
         """ Prediction """
         self.Prediction = Attention(self.SequenceModeling_output, hidden_size, num_classes)
 
-    def forward(self, input, text, scene_semantic, overlap_semantic, is_train=True):
-    #def forward(self, input, text, object_embedding, scene_semantic, overlap_semantic, is_train=True):
-
+    #def forward(self, input, text, scene_semantic, overlap_semantic, is_train=True):
+    def forward(self, input, text, scene, overlap, is_train=True):
         # Transformation
         input = self.Transformation(input)
         
@@ -92,27 +95,15 @@ class Model(nn.Module):
         
         visual_feature = visual_feature.squeeze(3)
 
-        # for j in range(scene_semantic[1]):
-
-        x = overlap_semantic.unsqueeze(0).repeat(2, 1, 1)
-        y = scene_semantic.unsqueeze(0).repeat(2, 1, 1)
-
-        x = F.relu(self.combined_fc1(x))
-        y = F.relu(self.combined_fc2(y))
-
-        x = F.relu(self.combined_fc3(x))
-        y = F.relu(self.combined_fc4(y))
-
-        init_cell = x
-        init_hid = y
-
         features_for_lang = visual_feature
 
+        init_hidd, init_cell = self.init_generation(overlap, scene)
+
         # Sequence
-        contextual_feature = self.SequenceModeling([features_for_lang, init_cell, init_hid])
+        contextual_feature, _, _ = self.SequenceModeling((features_for_lang, init_hidd, init_cell))
 
         # Prediction
-        prediction = self.Prediction(contextual_feature[0].contiguous(), text, is_train, batch_max_length=batch_max_length)
+        prediction = self.Prediction(contextual_feature.contiguous(), text, is_train, batch_max_length=batch_max_length)
 
         return prediction
 

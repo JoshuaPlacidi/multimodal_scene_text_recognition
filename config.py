@@ -1,0 +1,14 @@
+EXPERIMENT='config_test'
+
+DEVICE_IDS=[0]
+PRIMARY_DEVICE = 'cuda:0'
+
+ANNOTATION_SOURCE = 'VG'
+
+ANNOTATION = 'FREQ' # FREQ
+
+LSTM_HIDD_INIT = 'OVERLAP'
+LSTM_CELL_INIT = 'SCENE'
+
+COCO_TEXT_API_PATH = './annotations/COCO_Text_2014.json'
+IMAGE_PATH = "F:/dev/Datasets/COCO/2014/images/train2014/"

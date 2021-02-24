@@ -1,54 +1,43 @@
-experiment = 'no_seed_test'
+import config
+
 print('--- Running...')
-print('  - Experiment: ' + experiment)
+print('  - Experiment: ' + config.EXPERIMENT)
+print('  - Devices:', config.DEVICE_IDS)
+print('  - Annotations:', config.ANNOTATION)
+print('  - LSTM hidden layer initialisation:', config.LSTM_HIDD_INIT)
+print('  - LSTM cell layer initialisation:', config.LSTM_CELL_INIT)
+
 import torch
-import torch.nn as nn
-import torch.backends.cudnn as cudnn
 import torch.utils.data
-from torch.utils.data import Dataset
 import torch.nn.functional as F
-import torchvision.transforms as transforms
 torch.backends.cudnn.enabled = False
 
-#torch.manual_seed(0)
+torch.manual_seed(123456789)
 #torch.cuda.manual_seed(0)
 
 import numpy as np
 from tqdm import tqdm
 
-from utils import CTCLabelConverter, AttnLabelConverter
-from dataset import RawDataset, AlignCollate
-from PIL import Image
+from utils import AttnLabelConverter
 # from model import Model
-import torchvision
 import string
 
-from modules.transformation import TPS_SpatialTransformerNetwork
-from modules.feature_extraction import VGG_FeatureExtractor,RCNN_FeatureExtractor, ResNet_FeatureExtractor
-from modules.sequence_modeling import BidirectionalLSTM
-from modules.prediction import Attention
-
-from transformers import BertTokenizer, BertModel
-import os, json, cv2
+import json
 import pandas as pd
-
-from pycocotools.coco import COCO
 
 from coco_dataset import get_datasets
 from model import get_model
 
-device_ids = [0]
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+
+device_ids = config.DEVICE_IDS
+device = torch.device(config.PRIMARY_DEVICE if torch.cuda.is_available() else 'cpu')
 
 batch_size = 192
 
 train_ldr, val_ldr = get_datasets(batch_size)
 
 ## Model Config
-
-num_gpus = torch.cuda.device_count()
-
-# # model
 saved_model = 'TPS-ResNet-BiLSTM-Attn-case-sensitive.pth'
 
 character = string.printable[:-6]#'0123456789abcdefghijklmnopqrstuvwxyz'
@@ -73,19 +62,26 @@ def get_val_score(model):
 
     pred_dict = dict()
 
+    val_loss = 0
+
     with torch.no_grad():
-        for img_path_batch, img_batch, text_batch, scene_vector_batch, overlap_vector_batch in tqdm(val_ldr):
-        #for img_path_batch, img_batch, text_batch, objects_batch, scene_vector_batch, text_vector_batch in tqdm(val_ldr):
+        for img_path_batch, img_batch, text_batch, scene_batch, overlap_batch in tqdm(val_ldr):
             image_tensor = img_batch
             text = text_batch
 
             image = image_tensor.to(device)
             length_for_pred = torch.IntTensor([batch_max_length] * len(img_path_batch)).to(device)
             text_for_pred = torch.LongTensor(batch_size, batch_max_length + 1).fill_(0).to(device)
-            scene_vector_batch = scene_vector_batch.to(device)
-            overlap_vector_batch = overlap_vector_batch.to(device)
+            scene_batch = scene_batch.to(device)
+            overlap_batch = overlap_batch.to(device)
 
-            preds = model(image, text_for_pred, scene_vector_batch, overlap_vector_batch, is_train=False)
+            #encoded_text, _ = converter.encode(text_batch, batch_max_length=batch_max_length)
+
+            preds = model(image, text_for_pred, scene_batch, overlap_batch, is_train=False)
+
+            #target = encoded_text[:, 1:]  # without [GO] Symbol
+            #cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
+            #val_loss = cost.item()
 
             _, preds_index = preds.max(2)
             preds_str = converter.decode(preds_index, length_for_pred)
@@ -119,13 +115,13 @@ def get_val_score(model):
 
                 total += 1
 
-    return round(case_correct*100/total,5), round(correct*100/total,5), pred_dict
+    return round(case_correct*100/total,5), val_loss, pred_dict
 
 # Training
 
 import torch.optim as optim
 import time
-from utils import CTCLabelConverter, CTCLabelConverterForBaiduWarpctc, AttnLabelConverter, Averager
+from utils import AttnLabelConverter, Averager
 
 if rgb:
     input_channel = 3
@@ -146,7 +142,7 @@ for p in filter(lambda p: p.requires_grad, model.parameters()):
 
 optimizer = optim.Adam(filtered_parameters, lr=0.001)#, betas=(beta1, 0.999))
 
-df = pd.DataFrame(columns=['epoch','cost_avg','val_sensitive','val_insensitive'])
+df = pd.DataFrame(columns=['epoch','cost_avg','val_acc','val_loss'])
 
 start_iter = 0
 start_time = time.time()
@@ -158,11 +154,11 @@ epochs = 20
 
 print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(params_num))
 
-base_case_correct, base_correct, pred_dict = get_val_score(model)
-df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_sensitive':base_case_correct, 'val_insensitive':base_correct}, ignore_index=True)
+base_case_correct, val_loss, pred_dict = get_val_score(model)
+df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'val_loss':val_loss}, ignore_index=True)
 print(df)
 
-best_model = 57
+best_model = 59
 
 for epoch in range(epochs):
     model.train()
@@ -192,16 +188,16 @@ for epoch in range(epochs):
 
         iteration += 1
     
-    case_correct, to_lower_correct, pred_dict = get_val_score(model)
+    case_correct, val_loss, pred_dict = get_val_score(model)
     epoch_avg = round(epoch_cost/len(train_ldr),5)
-    df = df.append({'epoch': (epoch+1), 'cost_avg':epoch_avg, 'val_sensitive':case_correct, 'val_insensitive':to_lower_correct}, ignore_index=True)
-    df.to_csv('./results/' + experiment + '_training_log.csv', index=False)
+    df = df.append({'epoch': (epoch+1), 'cost_avg':epoch_avg, 'val_acc':case_correct, 'val_loss':val_loss}, ignore_index=True)
+    df.to_csv('./results/' + config.EXPERIMENT + '_training_log.csv', index=False)
     print(df)
     print('\n\n')
 
     if case_correct > best_model:
         best_model = case_correct
-        results_path = './results/' + experiment + '_e_' + str(epoch+1)
+        results_path = './results/models/' + config.EXPERIMENT + '_e_' + str(epoch+1)
 
         torch.save(model.state_dict(), results_path  + '.pt')
         with open(results_path + '.json', 'w') as dict_file:
