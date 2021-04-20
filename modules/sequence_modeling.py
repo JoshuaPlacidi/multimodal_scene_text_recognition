@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
+
 import config
+
+from collections import OrderedDict
+import math
 
 class BidirectionalLSTM(nn.Module):
 
@@ -9,20 +13,19 @@ class BidirectionalLSTM(nn.Module):
         self.rnn = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
         self.linear = nn.Linear(hidden_size * 2, output_size)
 
-    def forward(self, input, overlap, scene):
-        input, init_hidd, init_cell = input
+    def forward(self, visual_features, overlap, scene, is_train):
         """
         input : visual feature [batch_size x T x input_size]
         output : contextual feature [batch_size x T x output_size]
         """
         self.rnn.flatten_parameters()
 
-        recurrent, _ = self.rnn(input)
+        recurrent, _ = self.rnn(visual_features)
 
-        #recurrent, (new_hidd, new_cell) = self.rnn(input, (init_hidd, init_cell))  # batch_size x T x input_size -> batch_size x T x (2*hidden_size)
-        
+        #recurrent, _ = self.rnn(input, (overlap, scene))  # batch_size x T x input_size -> batch_size x T x (2*hidden_size)
         output = self.linear(recurrent)  # batch_size x T x output_size
-        return (output, init_hidd, init_cell)
+
+        return output
 
 from torch.nn.utils.weight_norm import weight_norm
 
@@ -145,8 +148,7 @@ class TransformerEncoderLayer(nn.Module):
         return src
 
 
-from collections import OrderedDict
-from torch import nn
+
 
 import math
 
