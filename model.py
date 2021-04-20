@@ -78,7 +78,7 @@ class Model(nn.Module):
 
         # Decoder
         if config.DECODER == "LSTM-Atn":
-            self.Prediction = Attention(self.SequenceModeling_output, hidden_size, num_classes)
+            self.Prediction = Attention(512, 512, num_classes)
         elif config.DECODER == "Transformer":
             self.Prediction = TF_decoder_pred(512, num_classes, embed_dim=config.EMBED_DIM)
         elif config.DECODER == "Linear":
@@ -119,11 +119,9 @@ def get_model(saved_model=None):
     if saved_model:
         pretrained_dict = torch.load(saved_model)
 
-        
-
-        # for k in del_keys:
-        #     del pretrained_dict[k]
-        # print(pretrained_dict.keys())
+        for k in del_keys:
+            if k in pretrained_dict.keys():
+                del pretrained_dict[k]
 
 
         model.load_state_dict(pretrained_dict, strict=False)

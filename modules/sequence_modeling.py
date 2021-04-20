@@ -53,11 +53,11 @@ class TF_encoder(nn.Module):
         if not is_train:
             print_list = relevance_scores[0].cpu().numpy().tolist()
             print_list = [round(x, 2) for [x] in print_list]
-            print(print_list)
+            print('Relevance scores:\n', print_list)
 
         relevant_overlap = relevance_scores * overlap
 
-        combined = visual_features + relevant_overlap
+        combined = visual_features# + relevant_overlap
         combined = combined.permute(1,0,2)
         combined = self.pos_encoder(combined)
 

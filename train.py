@@ -2,10 +2,11 @@ import config
 
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
-
-print('--- Training...')
-print('  - Experiment: ' + config.EXPERIMENT)
+print('--- Experiment: ' + config.EXPERIMENT)
 print('  - Devices:', config.DEVICE_IDS)
+print('--- Training...')
+print('  - Encoder:', config.ENCODER)
+print('  - Decoder:', config.DECODER)
 
 from transformers import BertTokenizer
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')

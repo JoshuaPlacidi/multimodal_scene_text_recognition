@@ -182,7 +182,7 @@ class TF_decoder_pred(nn.Module):
             output = self.emb_to_classes(output)
 
         else: # Inference
-            targets = torch.zeros(config.MAX_TEXT_LENGTH+1, memory.shape[1]) # 0->[GO], 5->'P'
+            targets = torch.zeros(config.MAX_TEXT_LENGTH+1, memory.shape[1])
             targets = targets.to(encoder_output.device)
 
             output = torch.zeros(config.MAX_TEXT_LENGTH, memory.shape[1], self.num_classes).to(encoder_output.device)
