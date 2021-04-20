@@ -24,6 +24,8 @@ class BidirectionalLSTM(nn.Module):
         output = self.linear(recurrent)  # batch_size x T x output_size
         return (output, init_hidd, init_cell)
 
+from torch.nn.utils.weight_norm import weight_norm
+
 class TF_encoder(nn.Module):
     def __init__(self):
         super(TF_encoder, self).__init__()
@@ -34,78 +36,30 @@ class TF_encoder(nn.Module):
         self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=6, norm=self.layer_norm)
 
         self.mlp = MLP(input_size=1024, hidden_size=768, num_classes=512, num_layers=3)
-        self.softmax = nn.Softmax(dim=2)
+        self.linear = weight_norm(nn.Linear(512, 1), dim=None)
 
-    def forward(self, input, overlap, scene, is_train):
-        #input = input + self.pos_encoder(input)
-
-        # input = [batch, seq, 512]
-        # overlap = [batch, obj_len, 512] -> [batch, 1, 512]
+    def forward(self, visual_features, overlap, scene, is_train):
         overlap = torch.sum(overlap, dim=1, keepdim=True)
         overlap = overlap.repeat(1, config.MAX_TEXT_LENGTH+1, 1)
-        # combined = concat(input + overlap) -> [batch, seq, 1024]
-        combined = torch.cat((input, overlap), dim=2)
-        #combined = torch.matmul(input, overlap.permute(0,2,1)) # batch x seq len x obj len
+        visual_and_overlap = torch.cat((visual_features, overlap), dim=2)
 
-        # mlp input = matmult (overlap )
-        # mlp output = batch, 26, 20
+        relevance_scores = self.mlp(visual_and_overlap)
+        relevance_scores = self.linear(relevance_scores)
+        #combined = nn.functional.softmax(combined, 1)
 
-        # output_mlp [batch, seq, 1]
-        relevance = self.softmax(self.mlp(combined))
-        relevant_overlap = relevance * overlap
-        input = input + relevant_overlap
-        #print(list(relevance.cpu().numpy()[0]))
-        #relevance = softmax(relevance)
+        if not is_train:
+            print_list = relevance_scores[0].cpu().numpy().tolist()
+            print_list = [round(x, 2) for [x] in print_list]
+            print(print_list)
 
-        # overlap_features = relevance * visual_features
-        # visual + overlap
-        # pos()
-        # output = encoder(visual_features)
+        relevant_overlap = relevance_scores * overlap
 
+        combined = visual_features + relevant_overlap
+        combined = combined.permute(1,0,2)
+        combined = self.pos_encoder(combined)
 
-
-        if is_train == False and str(overlap.device)[-1] == config.PRIMARY_DEVICE[-1]:
-            print(relevance[0,0])#.cpu().numpy())
-            # seq = list(relevance.cpu().numpy()[0])
-            # for i in range(len(seq)):
-            #     l = list(seq[i])
-            #     l = [round(i, 1) for i in l]
-            #     print(l,end='')
-
-        # print(overlap.device,config.PRIMARY_DEVICE,overlap.device==config.PRIMARY_DEVICE)
-        # if overlap.device == config.PRIMARY_DEVICE:
-        #     print(relevance[0])
-
-        
-
-        # overlap = overlap.unsqueeze(1).repeat(1,26,1,1)
-
-        # # CNN 
-
-        # relevance = relevance.unsqueeze(-1).repeat(1,1,1,512)
-
-        # #print('rel', relevance.shape, 'o', overlap.shape)
-
-        # # multiply relevance scalar to each of the features of each object
-        
-        # relevant_overlap = relevance * overlap # batch x seq_len x obj_len x 512
-
-        # # if str(overlap.device)[-1] == config.PRIMARY_DEVICE[-1]: print(relevant_overlap[0,0,0][:10])
-
-        # relevant_overlap = torch.sum(relevant_overlap, dim=2) # batch x seq_len x obj_len x 512
-
-        input = input.permute(1,0,2)
-        input = self.pos_encoder(input)
-
-        #torch.cat((overlap, input), dim=0)
-
-        output = self.encoder(input)
-
-        #output = output.permute(1,0,2)
-        #print(output.shape)
-
+        output = self.encoder(combined)
         output = output.permute(1,0,2)
-        #output = output * relevant_overlap
         
         return output
 
