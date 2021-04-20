@@ -48,7 +48,7 @@ class TF_encoder(nn.Module):
 
         relevance_scores = self.mlp(visual_and_overlap)
         relevance_scores = self.linear(relevance_scores)
-        #combined = nn.functional.softmax(combined, 1)
+        relevance_scores = nn.functional.softmax(relevance_scores, 1)
 
         if not is_train:
             print_list = relevance_scores[0].cpu().numpy().tolist()

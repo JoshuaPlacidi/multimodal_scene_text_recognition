@@ -1,7 +1,11 @@
 import torch
-import config
 import torch.nn as nn
 import torch.nn.functional as F
+
+import math
+
+from torch.nn.modules.sparse import Embedding
+import config
 
 
 class Attention(nn.Module):
@@ -20,19 +24,19 @@ class Attention(nn.Module):
         one_hot = one_hot.scatter_(1, input_char, 1)
         return one_hot
 
-    def forward(self, batch_H, text, overlap, scene, is_train=True, batch_max_length=25):
+    def forward(self, encoder_output, text, overlap, scene, is_train):
         """
         input:
             batch_H : contextual_feature H = hidden state of encoder. [batch_size x num_steps x contextual_feature_channels]
             text : the text-index of each image. [batch_size x (max_length+1)]. +1 for [GO] token. text[:, 0] = [GO].
         output: probability distribution at each step [batch_size x num_steps x num_classes]
         """
-        batch_size = batch_H.size(0)
-        num_steps = batch_max_length + 1  # +1 for [s] at end of sentence.
+        batch_size = encoder_output.size(0)
+        num_steps = config.MAX_TEXT_LENGTH + 1  # +1 for [s] at end of sentence.
 
-        output_hiddens = torch.FloatTensor(batch_size, num_steps, self.hidden_size).fill_(0).to(batch_H.device)
-        hidden = (torch.FloatTensor(batch_size, self.hidden_size).fill_(0).to(batch_H.device), 
-        torch.FloatTensor(batch_size, self.hidden_size).fill_(0).to(batch_H.device))
+        output_hiddens = torch.FloatTensor(batch_size, num_steps, self.hidden_size).fill_(0).to(encoder_output.device)
+        hidden = (torch.FloatTensor(batch_size, self.hidden_size).fill_(0).to(encoder_output.device), 
+        torch.FloatTensor(batch_size, self.hidden_size).fill_(0).to(encoder_output.device))
         #hidden = (overlap, overlap)
         
         if is_train:
@@ -42,17 +46,17 @@ class Attention(nn.Module):
                 # hidden : decoder's hidden s_{t-1}, batch_H : encoder's hidden H, char_onehots : one-hot(y_{t-1})
                 #print('hidden[0]',hidden[0].shape,'hidden[1]',hidden[1].shape,' | batch_H', batch_H.shape)
                 #hidden[0], hidden[1] = init_hidd, init_hidd
-                hidden, alpha = self.attention_cell(hidden, batch_H, char_onehots, overlap=overlap, scene=scene)
+                hidden, alpha = self.attention_cell(hidden, encoder_output, char_onehots, overlap=overlap, scene=scene)
                 output_hiddens[:, i, :] = hidden[0]  # LSTM hidden index (0: hidden, 1: Cell)
             probs = self.generator(output_hiddens)
 
         else:
-            targets = torch.LongTensor(batch_size).fill_(0).to(batch_H.device)  # [GO] token
-            probs = torch.FloatTensor(batch_size, num_steps, self.num_classes).fill_(0).to(batch_H.device)
+            targets = torch.LongTensor(batch_size).fill_(0).to(encoder_output.device)  # [GO] token
+            probs = torch.FloatTensor(batch_size, num_steps, self.num_classes).fill_(0).to(encoder_output.device)
 
             for i in range(num_steps):
                 char_onehots = self._char_to_onehot(targets, onehot_dim=self.num_classes)
-                hidden, alpha = self.attention_cell(hidden, batch_H, char_onehots, overlap=overlap,scene=scene)
+                hidden, alpha = self.attention_cell(hidden, encoder_output, char_onehots, overlap=overlap,scene=scene)
                 probs_step = self.generator(hidden[0])
                 probs[:, i, :] = probs_step
                 _, next_input = probs_step.max(1)
@@ -97,11 +101,9 @@ class AttentionCell(nn.Module):
         #print(len(cur_hidden), cur_hidden[0].shape)
         return cur_hidden, alpha
 
-
-import math
-
 class TF_encoder_prediction(nn.Module):
     def __init__(self, ntoken, ninp, nhid=256, nhead=2, nlayers=2, dropout=0.2):
+        raise Exception('TF_encoder_prediction not implemented correctly yet, dont use!')
         super(TF_encoder_prediction, self).__init__()
         self.src_mask = None
         self.pos_encoder = PositionalEncoding(ninp, dropout)
@@ -163,7 +165,7 @@ class TF_decoder_pred(nn.Module):
         self.fc.bias.data.zero_()
         self.fc.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, text, encoder_output, overlap, is_train=True):
+    def forward(self, encoder_output, text, overlap, scene, is_train):
 
         memory = self.hid_to_emb(encoder_output)
         memory = memory.permute(1,0,2)
