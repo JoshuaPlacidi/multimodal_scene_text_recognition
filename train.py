@@ -89,9 +89,10 @@ def get_val_score(model):
             preds_prob = F.softmax(preds, dim=2)
             preds_max_prob, _ = preds_prob.max(dim=2)
 
-            print(text_batch[0] + ':', preds_str[0])
-            
-            print(tokenizer.decode(overlap_batch[0]))
+            print('--- Displaying sample 0 from current batch')
+            print('  - Overlap Objs:', tokenizer.decode(overlap_batch[0]))
+            print('  - Ground truth:', text_batch[0])
+            print('  - Prediction:  ', preds_str[0], '\n\n')
 
             #time.sleep(10)
 

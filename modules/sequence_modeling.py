@@ -50,10 +50,10 @@ class TF_encoder(nn.Module):
         relevance_scores = self.linear(relevance_scores)
         relevance_scores = nn.functional.softmax(relevance_scores, 1)
 
-        if not is_train:
+        if not is_train and str(overlap.device)[-1] == config.PRIMARY_DEVICE: # if running validation and is on primary device (to prevent multiple print outs if more than 1 gpu is being used)
             print_list = relevance_scores[0].cpu().numpy().tolist()
             print_list = [round(x, 2) for [x] in print_list]
-            print('Relevance scores:\n', print_list)
+            print('  - Relevance scores:\n', print_list)
 
         relevant_overlap = relevance_scores * overlap
 

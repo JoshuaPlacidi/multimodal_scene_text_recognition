@@ -15,7 +15,7 @@ SAVED_MODEL = 'TPS-ResNet-BiLSTM-Attn-case-sensitive.pth'#'./results/models/Full
 
 # Model structure
 ENCODER = 'Transformer' # LSTM | Transformer
-DECODER = 'Linear' # LSTM-Atn | Transformer | Linear
+DECODER = 'LSTM-Atn' # LSTM-Atn | Transformer | Linear
 
 # Embed dim (only used for transformer encoder currently)
 EMBED_DIM = 64
