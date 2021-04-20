@@ -1,18 +1,21 @@
 import config
 
-print('--- Running...')
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
+print('--- Training...')
 print('  - Experiment: ' + config.EXPERIMENT)
 print('  - Devices:', config.DEVICE_IDS)
-print('  - Annotations:', config.ANNOTATION)
-print('  - LSTM hidden layer initialisation:', config.LSTM_HIDD_INIT)
-print('  - LSTM cell layer initialisation:', config.LSTM_CELL_INIT)
+
+from transformers import BertTokenizer
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
 import torch
 import torch.utils.data
 import torch.nn.functional as F
 torch.backends.cudnn.enabled = False
 
-torch.manual_seed(123456789)
+torch.manual_seed(config.RANDOM_SEED)
 #torch.cuda.manual_seed(0)
 
 import numpy as np
@@ -28,29 +31,25 @@ import pandas as pd
 from coco_dataset import get_datasets
 from model import get_model
 
-
+import time
 
 device_ids = config.DEVICE_IDS
 device = torch.device(config.PRIMARY_DEVICE if torch.cuda.is_available() else 'cpu')
 
-batch_size = 192
-
-train_ldr, val_ldr = get_datasets(batch_size)
+train_ldr, val_ldr = get_datasets()
 
 ## Model Config
-saved_model = 'TPS-ResNet-BiLSTM-Attn-case-sensitive.pth'
 
-character = string.printable[:-6]#'0123456789abcdefghijklmnopqrstuvwxyz'
+character = string.printable[:-6]
 converter = AttnLabelConverter(character)
 
-batch_max_length = 25
+batch_max_length = config.MAX_TEXT_LENGTH
 
 rgb = False
-    
-model = get_model()
-model = torch.nn.DataParallel(model, device_ids = device_ids)
-model.load_state_dict(torch.load(saved_model), strict=False)
-model = model.to(device)
+
+model = get_model(config.SAVED_MODEL)
+
+
 
 def get_val_score(model):
     print('  - Running Validation')
@@ -71,7 +70,7 @@ def get_val_score(model):
 
             image = image_tensor.to(device)
             length_for_pred = torch.IntTensor([batch_max_length] * len(img_path_batch)).to(device)
-            text_for_pred = torch.LongTensor(batch_size, batch_max_length + 1).fill_(0).to(device)
+            text_for_pred = torch.LongTensor(config.BATCH_SIZE, batch_max_length + 1).fill_(0).to(device)
             scene_batch = scene_batch.to(device)
             overlap_batch = overlap_batch.to(device)
 
@@ -80,19 +79,28 @@ def get_val_score(model):
             preds = model(image, text_for_pred, scene_batch, overlap_batch, is_train=False)
 
             #target = encoded_text[:, 1:]  # without [GO] Symbol
-            #cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
-            #val_loss = cost.item()
+            # cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
+            # val_loss = cost.item()
 
             _, preds_index = preds.max(2)
             preds_str = converter.decode(preds_index, length_for_pred)
 
             preds_prob = F.softmax(preds, dim=2)
             preds_max_prob, _ = preds_prob.max(dim=2)
+
+            print(text_batch[0] + ':', preds_str[0])
+            
+            print(tokenizer.decode(overlap_batch[0]))
+
+            #time.sleep(10)
+
             for img, text, pred, pred_max_prob in zip(img_batch, text_batch, preds_str, preds_max_prob):
 
                 pred_EOS = pred.find('[s]')
                 pred = pred[:pred_EOS]  # prune after "end of sentence" token ([s])
                 pred_max_prob = pred_max_prob[:pred_EOS]
+
+                #print('"' + text + '"' + ' - "' + str(pred) + '"')
 
                 if text in pred_dict.keys():
                     d_total, d_correct, ls = pred_dict[text]
@@ -140,7 +148,8 @@ for p in filter(lambda p: p.requires_grad, model.parameters()):
     filtered_parameters.append(p)
     params_num.append(np.prod(p.size()))
 
-optimizer = optim.Adam(filtered_parameters, lr=0.001)#, betas=(beta1, 0.999))
+optimizer = optim.AdamW(filtered_parameters, lr=0.0001)#, betas=(beta1, 0.999))
+scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=5, gamma=0.1)
 
 df = pd.DataFrame(columns=['epoch','cost_avg','val_acc','val_loss'])
 
@@ -150,7 +159,7 @@ best_accuracy = -1
 best_norm_ED = -1
 iteration = start_iter
 torch.cuda.empty_cache()
-epochs = 20
+epochs = config.EPOCHS
 
 print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(params_num))
 
@@ -160,38 +169,44 @@ print(df)
 
 best_model = 59
 
-for epoch in range(epochs):
+for epoch in range(config.EPOCHS):
     model.train()
     epoch_cost = 0
     print('  - Epoch: ' + str(epoch+1))
     for img_path_batch, img_batch, text_batch, scene_vector_batch, overlap_vector_batch in tqdm(train_ldr):
-    #for img_path_batch, img_batch, text_batch, objects_batch, scene_vector_batch, text_vector_batch in tqdm(train_ldr):
         image = img_batch.to(device)
-        #objects_batch = objects_batch.to(device)
+
         scene_vector_batch = scene_vector_batch.to(device)
         overlap_vector_batch = overlap_vector_batch.to(device)
 
         text, length = converter.encode(text_batch, batch_max_length=batch_max_length)
-
-        preds = model(image, text[:, :-1], scene_vector_batch, overlap_vector_batch)  # align with Attention.forward
-        #preds = model(image, text[:, :-1], objects_batch, scene_vector_batch, text_vector_batch)  # align with Attention.forward
+        preds = model(image, text[:, :-1], scene_vector_batch, overlap_vector_batch)
         target = text[:, 1:]  # without [GO] Symbol
-        cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
 
+        cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
         model.zero_grad()
         cost.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 5)  # gradient clipping with 5 (Default)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 2)
         optimizer.step()
         
         loss_avg.add(cost)
         epoch_cost += cost.item()
 
         iteration += 1
+
+        # length_for_pred = torch.IntTensor([config.MAX_TEXT_LENGTH] * len(img_path_batch))
+        # _, preds_index = preds.max(2)
+        # preds_str = converter.decode(preds_index, length_for_pred)
+        # print(text_batch[0] + ': ' + preds_str[0])
     
     case_correct, val_loss, pred_dict = get_val_score(model)
+    scheduler.step()
+
+
     epoch_avg = round(epoch_cost/len(train_ldr),5)
     df = df.append({'epoch': (epoch+1), 'cost_avg':epoch_avg, 'val_acc':case_correct, 'val_loss':val_loss}, ignore_index=True)
     df.to_csv('./results/' + config.EXPERIMENT + '_training_log.csv', index=False)
+    print(' - ' + config.EXPERIMENT)
     print(df)
     print('\n\n')
 

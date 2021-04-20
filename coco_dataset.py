@@ -30,29 +30,25 @@ class Annotations_Dataset(Dataset):
         # Load object annotations
         self.classes = ['background']
 
-        if config.ANNOTATION_SOURCE == 'VG': # If using Visual Genome object data
-            with open('./annotations/features/VG.json') as object_annotations: # Load object features
+        if config.SEMANTIC_SOURCE == 'VG': # If using Visual Genome object data
+            with open('./annotations/features/vg_frequency.json') as object_annotations: # Load object features
                 self.object_annotations = json.load(object_annotations)
 
-            with open('./annotations/features/VG_classes.txt') as VG_labels: # Load visual genome class labels
+            with open('./annotations/features/vg_classes.txt') as VG_labels: # Load visual genome class labels
                 for object in VG_labels.readlines():
                     self.classes.append(object.split(',')[0].lower().strip().replace("'", ''))
 
-            if config.ANNOTATION == 'FREQ':
-                self.overlap_vector_size = 1601
-                self.scene_vector_size = 1601
-
-        elif config.ANNOTATION_SOURCE == 'COCO': # If using MS COCO object data
-            with open('./annotations/features/COCO.json') as object_annotations:
+        elif config.SEMANTIC_SOURCE == 'COCO': # If using MS COCO object data
+            with open('./annotations/features/coco_frequency.json') as object_annotations:
                 self.object_annotations = json.load(object_annotations)
 
-            with open('./annotations/featres/COCO_classes.txt') as COCO_labels: # Load MS COCO class labels
+            with open('./annotations/features/coco_classes.txt') as COCO_labels: # Load MS COCO class labels
                 for object in COCO_labels.readlines():
                     self.classes.append(object.split(',')[0].lower().strip().replace("'", ''))
 
-            if config.ANNOTATION == 'FREQ':
-                self.overlap_vector_size = 90
-                self.scene_vector_size = 90
+        if config.SEMANTIC_FORM == 'FREQ':
+            self.overlap_vector_size = len(self.classes)
+            self.scene_vector_size = len(self.classes)
 
         # Process text annotations
         for _, anno in tqdm(text_annotations['anns'].items()):
@@ -87,37 +83,48 @@ class Annotations_Dataset(Dataset):
         img = self.resize(img)
         img = self.to_tensor(img)
         
-        if config.ANNOTATION == 'BERT':
-            overlap = get_bert_tokens(anno, self.classes, 7, 8, 'overlap')
-            scene = get_bert_tokens(anno, self.classes, 7, 50, 'scene')
+        if config.SEMANTIC_FORM == 'BERT':
+            overlap = get_bert_tokens(anno, self.classes, 7, 20, 'overlap')
+            scene = get_bert_tokens(anno, self.classes, 7, 60, 'scene')
 
-        elif config.ANNOTATION == 'FREQ':
+        elif config.SEMANTIC_FORM == 'FREQ':
             overlap = torch.FloatTensor(get_object_vector(anno['overlap'], self.overlap_vector_size))
             scene = torch.FloatTensor(get_object_vector(anno['scene'], self.scene_vector_size))
 
+        else:
+            overlap = torch.zeros(1)
+            scene = torch.zeros(1)
+
+        
+
         return anno['img_path'], img, anno['utf8_string'], scene, overlap
 
-def get_bert_tokens(anno, classes, max_length, sequence_pad, key):
-    tokens = []
-    for key, val in anno[key].items():
-        for _ in range(val):
-            token = torch.tensor(tokenizer.encode(classes[int(key)], max_length=max_length, padding='max_length'))
-            tokens.append(token) 
-    if not tokens: # If tokens is empty
-        token = torch.tensor(tokenizer.encode(classes[0], max_length=max_length, padding='max_length'))
-        tokens.append(token)
+def get_bert_tokens(anno, classes, max_length, sequence_pad, key, encode_frequency = False):
+    # tokens = []
+    # for key, val in anno[key].items():
+    #     for _ in range(val):
+    #         token = torch.tensor(tokenizer.encode(classes[int(key)], max_length=max_length, padding='max_length'))
+    #         tokens.append(token) 
+    # if not tokens: # If tokens is empty
+    #     token = torch.tensor(tokenizer.encode(classes[0], max_length=max_length, padding='max_length'))
+    #     tokens.append(token)
 
-    for _ in range(sequence_pad-len(tokens)):
-        tokens.append(torch.zeros(max_length))
+    # for _ in range(sequence_pad-len(tokens)):
+    #     tokens.append(torch.zeros(max_length))
 
-    tokens = torch.stack(tokens)
+    # tokens = torch.stack(tokens)
 
-    # overlap_sentence = ""
-    # for key, val in anno['overlap'].items():
-    #     for i in range(val):
-    #         overlap_sentence += self.classes[int(key)] + ' [SEP] '
+    sentence = ""
+    for k, v in anno[key].items():
+        if encode_frequency:
+            for _ in range(v):
+                sentence += classes[int(k) + 1] + ' [SEP] '
+        else:
+            sentence += classes[int(k) + 1] + ' [SEP] '
 
-    # overlap = torch.tensor(tokenizer.encode(overlap_sentence, add_special_tokens=True, max_length=25, padding='max_length'))
+    sentence = sentence[:-7]
+
+    tokens = torch.tensor(tokenizer.encode(sentence, max_length=sequence_pad, padding='max_length', truncation='longest_first'))
 
     return tokens
 
@@ -133,7 +140,7 @@ def get_object_vector(dict, length):
 def check_anno(anno_text):
     return anno_text == anno_text.strip().translate({ord(c): None for c in string.printable[-6:]+'/°-'})[0:25]#string.printable[-38:]+'°'})[0:25]
 
-def get_datasets(batch_size):
+def get_datasets():
     print('--- Loading Data')
     # txt_annos_path = "F:/dev/Datasets/COCO/2014/COCO_Text_2014.json"
     # feats_path = './comb_data/VG/area_resize.json'#'./comb_data/VG_area_resize_iou75.json' #new_comb.json  './comb_data/tfidf_area_resize.json'
@@ -143,10 +150,10 @@ def get_datasets(batch_size):
     val_data = Annotations_Dataset(set='val')
 
 
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True,num_workers=0)
-    val_loader = torch.utils.data.DataLoader(val_data, batch_size=batch_size, shuffle=True,num_workers=0)
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
+    val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
 
-    print('  - ' + str(len(train_loader) * batch_size) + ' training samples')
-    print('  - ' + str(len(val_loader) * batch_size) + ' val samples')
+    print('  - ' + str(len(train_loader)) + ' training batches')
+    print('  - ' + str(len(val_loader)) + ' val batches')
 
     return train_loader, val_loader
