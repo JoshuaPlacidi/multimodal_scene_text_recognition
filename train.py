@@ -153,7 +153,7 @@ for p in filter(lambda p: p.requires_grad, model.parameters()):
 optimizer = optim.AdamW(filtered_parameters, lr=0.0001)#, betas=(beta1, 0.999))
 scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=5, gamma=0.1)
 
-df = pd.DataFrame(columns=['epoch','cost_avg','val_acc','val_loss'])
+df = pd.DataFrame(columns=['epoch','cost_avg','val_acc','train_acc'])
 
 start_iter = 0
 start_time = time.time()
@@ -166,15 +166,20 @@ epochs = config.EPOCHS
 print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(params_num))
 
 base_case_correct, val_loss, pred_dict = get_val_score(model)
-df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'val_loss':val_loss}, ignore_index=True)
+df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'train_acc':'0'}, ignore_index=True)
 print(df)
 
-best_model = 59
+best_model = config.MODEL_SAVE_THRESHOLD
 
 for epoch in range(config.EPOCHS):
+
     model.train()
     epoch_cost = 0
     print('  - Epoch: ' + str(epoch+1))
+
+    train_correct = 0
+    total = 0
+
     for img_path_batch, img_batch, text_batch, scene_vector_batch, overlap_vector_batch in tqdm(train_ldr):
         image = img_batch.to(device)
 
@@ -196,6 +201,47 @@ for epoch in range(config.EPOCHS):
 
         iteration += 1
 
+        #
+        # ---------
+        #
+        length_for_pred = torch.IntTensor([batch_max_length] * len(img_path_batch)).to(device)
+        _, preds_index = preds.max(2)
+        preds_str = converter.decode(preds_index, length_for_pred)
+
+        preds_prob = F.softmax(preds, dim=2)
+        preds_max_prob, _ = preds_prob.max(dim=2)
+
+        for img, text, pred, pred_max_prob in zip(img_batch, text_batch, preds_str, preds_max_prob):
+
+            pred_EOS = pred.find('[s]')
+            pred = pred[:pred_EOS]  # prune after "end of sentence" token ([s])
+            pred_max_prob = pred_max_prob[:pred_EOS]
+
+            #print('"' + text + '"' + ' - "' + str(pred) + '"')
+
+            if text in pred_dict.keys():
+                d_total, d_correct, ls = pred_dict[text]
+                if(text == str(pred)):
+                    train_correct += 1
+                    d_correct += 1
+                else:
+                    ls.append(str(pred))
+                d_total += 1
+                pred_dict[text] = (d_total, d_correct, ls)
+            else:
+                if(text == str(pred)):
+                    train_correct += 1
+                    pred_dict[text] = (1, 1, [])
+                else:
+                    pred_dict[text] = (1, 0, [str(pred)])
+
+            total += 1
+        train_acc = round(train_correct*100/total,5)
+        
+        #
+        # -----------
+        #
+
         # length_for_pred = torch.IntTensor([config.MAX_TEXT_LENGTH] * len(img_path_batch))
         # _, preds_index = preds.max(2)
         # preds_str = converter.decode(preds_index, length_for_pred)
@@ -206,7 +252,7 @@ for epoch in range(config.EPOCHS):
 
 
     epoch_avg = round(epoch_cost/len(train_ldr),5)
-    df = df.append({'epoch': (epoch+1), 'cost_avg':epoch_avg, 'val_acc':case_correct, 'val_loss':val_loss}, ignore_index=True)
+    df = df.append({'epoch': (epoch+1), 'cost_avg':epoch_avg, 'val_acc':case_correct, 'train_acc':train_acc}, ignore_index=True)
     df.to_csv('./results/' + config.EXPERIMENT + '_training_log.csv', index=False)
     print(' - ' + config.EXPERIMENT)
     print(df)
