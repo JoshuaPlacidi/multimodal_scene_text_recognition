@@ -1,5 +1,5 @@
 import torch
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+import config
 
 
 class CTCLabelConverter(object):
@@ -34,7 +34,7 @@ class CTCLabelConverter(object):
             text = list(t)
             text = [self.dict[char] for char in text]
             batch_text[i][:len(text)] = torch.LongTensor(text)
-        return (batch_text.to(device), torch.IntTensor(length).to(device))
+        return (batch_text.to(config.PRIMARY_DEVICE), torch.IntTensor(length).to(config.PRIMARY_DEVICE))
 
     def decode(self, text_index, length):
         """ convert text-index into text-label. """
@@ -135,7 +135,7 @@ class AttnLabelConverter(object):
             text.append('[s]')
             text = [self.dict[char] for char in text]
             batch_text[i][1:1 + len(text)] = torch.LongTensor(text)  # batch_text[:, 0] = [GO] token
-        return (batch_text.to(device), torch.IntTensor(length).to(device))
+        return (batch_text.to(config.PRIMARY_DEVICE), torch.IntTensor(length).to(config.PRIMARY_DEVICE))
 
     def decode(self, text_index, length):
         """ convert text-index into text-label. """
