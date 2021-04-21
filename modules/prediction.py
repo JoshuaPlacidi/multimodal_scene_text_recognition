@@ -149,6 +149,7 @@ class TF_decoder_pred(nn.Module):
         self.hid_to_emb = nn.Linear(hidden_size, embed_dim)
         self.emb = nn.Embedding(num_classes, embed_dim)
         self.emb_to_classes = nn.Linear(embed_dim, num_classes)
+        self.pos_encoder = PositionalEncoding(config.EMBED_DIM)
 
         self.num_classes = num_classes
         self.embed_dim = embed_dim
@@ -167,21 +168,29 @@ class TF_decoder_pred(nn.Module):
 
     def forward(self, encoder_output, text, overlap, scene, is_train):
 
+        # convert memory dim to character embedding dim
         memory = self.hid_to_emb(encoder_output)
         memory = memory.permute(1,0,2)
 
         if is_train: # Training
-            targets = self.emb(text)
-            targets = targets[:memory.shape[1],:,:]
-            targets = targets.permute(1,0,2)
-            targets[0,:] = overlap
 
+            # convert targets from [batch, seq, feats] -> [seq, batch, feats] and apply embedding and position encoding
+            targets = text[:memory.shape[1],:]
+            targets = targets.permute(1,0)
+            #targets[0,:] = overlap
+            emb_targets = self.emb(targets)
+            emb_targets = self.pos_encoder(emb_targets)
+
+            # generate target mask and pass to decoder
             target_mask = self._generate_square_subsequent_mask(config.MAX_TEXT_LENGTH+1).to(encoder_output.device)
+            output = self.decoder(tgt=emb_targets, memory=memory, tgt_mask=target_mask)
 
-            output = self.decoder(tgt=targets, memory=memory, tgt_mask=target_mask)
+            # map embeding dim to number of classes
             output = self.emb_to_classes(output)
 
         else: # Inference
+
+            # Declare targets and output as zero tensors of output shape
             targets = torch.zeros(config.MAX_TEXT_LENGTH+1, memory.shape[1])
             targets = targets.to(encoder_output.device)
 
@@ -189,15 +198,19 @@ class TF_decoder_pred(nn.Module):
 
             for t in range(config.MAX_TEXT_LENGTH):
                 
+                # convert targets into embeddings and apply positional encoding
                 emb_targets = self.emb(targets.long())
-                emb_targets[0,:] = overlap
+                emb_targets = self.pos_encoder(emb_targets)
+                #emb_targets[0,:] = overlap
 
+                # pass embed targets and encoder memory to decoder
                 t_output = self.decoder(tgt=emb_targets[:t+1], memory=memory)
 
-
+                # map embeding dim to number of classes
                 t_output = self.emb_to_classes(t_output)
-                _, char_index = t_output[-1].max(1)
 
+                # take index class with max probability and append to targets and output sequence
+                _, char_index = t_output[-1].max(1)
                 targets[t+1,:] = char_index
                 output[t,:] = t_output[t]
 
@@ -236,7 +249,6 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        print(x.shape, self.pe.shape)
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
 
