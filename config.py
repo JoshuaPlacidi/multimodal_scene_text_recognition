@@ -23,10 +23,10 @@ EMBED_DIM = 64
 
 # Semantic vector processing
 SEMANTIC_SOURCE = 'VG'
-SEMANTIC_FORM = 'ZERO' # BERT | FREQ | ZERO | RAND
+SEMANTIC_FORM = 'BERT' # BERT | FREQ | ZERO | RAND
 
 # Name of experiement (used to save files)
-EXPERIMENT = 'linear_1'#e6d1_emb64_SOS_TEST1'#'TEARS_2layers_lr0.0001_TFdecoder'
+EXPERIMENT = 'gate_no_softmax'#e6d1_emb64_SOS_TEST1'#'TEARS_2layers_lr0.0001_TFdecoder'
 
 
 
