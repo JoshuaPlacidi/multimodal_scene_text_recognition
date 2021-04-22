@@ -9,23 +9,24 @@ RANDOM_SEED = 999
 BATCH_SIZE = 192
 EPOCHS = 12
 MAX_TEXT_LENGTH = 25
+MODEL_SAVE_THRESHOLD = 100 # Once val accuraccy % passes this threshold highest accuraccy models are saved to ./results/models
 
 # Pretained model to use
 SAVED_MODEL = 'TPS-ResNet-BiLSTM-Attn-case-sensitive.pth'#'./results/models/Full_TF_e2_d2_TEARS_0_00001_batch_64_e_50.pt'
 
 # Model structure
 ENCODER = 'Transformer' # LSTM | Transformer
-DECODER = 'LSTM-Atn' # LSTM-Atn | Transformer | Linear
+DECODER = 'Linear' # LSTM-Atn | Transformer | Linear
 
 # Embed dim (only used for transformer encoder currently)
 EMBED_DIM = 64
 
 # Semantic vector processing
 SEMANTIC_SOURCE = 'VG'
-SEMANTIC_FORM = 'BERT' # FREQ | ZERO | RAND
+SEMANTIC_FORM = 'ZERO' # BERT | FREQ | ZERO | RAND
 
 # Name of experiement (used to save files)
-EXPERIMENT = 'experiment_name'#e6d1_emb64_SOS_TEST1'#'TEARS_2layers_lr0.0001_TFdecoder'
+EXPERIMENT = 'linear_1'#e6d1_emb64_SOS_TEST1'#'TEARS_2layers_lr0.0001_TFdecoder'
 
 
 
