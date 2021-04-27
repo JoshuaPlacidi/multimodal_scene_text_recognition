@@ -125,30 +125,29 @@ class Joined_Bert(nn.Module):
 
 # Return frequency embedding initilisations
 class Frequency(nn.Module):
-
-    def __init__(self):
+    def __init__(self, output_dim=512):
         super(Frequency, self).__init__()
         if config.SEMANTIC_SOURCE == 'VG':
-            self.fc_o1 = nn.Linear(1601, 800)
-            self.fc_o2 = nn.Linear(800, 256)
-            self.fc_s1 = nn.Linear(1601, 800)
-            self.fc_s2 = nn.Linear(800, 256)
+            self.fc_o = nn.Linear(config.EMBED_DIM, output_dim)
+            self.fc_s = nn.Linear(config.EMBED_DIM, output_dim)
 
         elif config.SEMANTIC_SOURCE == 'COCO':
-            self.fc_o1 = nn.Linear(92, 175)
-            self.fc_o2 = nn.Linear(175, 256)
-            self.fc_s1 = nn.Linear(92, 175)
-            self.fc_s2 = nn.Linear(175, 256)
+            self.fc_o = nn.Linear(config.EMBED_DIM, output_dim)
+            self.fc_s = nn.Linear(config.EMBED_DIM, output_dim)
+
+        self.embed = nn.Embedding(92, config.EMBED_DIM)
 
     def forward(self, overlap, scene):
-        # Pass through linear layers
-        overlap = self.fc_o1(overlap)
-        overlap = F.relu(overlap)
-        overlap = self.fc_o2(overlap)
+        # Embed object indexs
+        overlap = self.embed(overlap.long())
+        scene = self.embed(scene.long())
 
-        scene = self.fc_s1(scene)
+        # Pass through linear layers
+        overlap = self.fc_o(overlap)
+        overlap = F.relu(overlap)
+
+        scene = self.fc_s(scene)
         scene = F.relu(scene)
-        scene = self.fc_s2(scene)
 
         return overlap, scene
 

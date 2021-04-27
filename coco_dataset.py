@@ -88,8 +88,24 @@ class Annotations_Dataset(Dataset):
             scene = get_bert_tokens(anno, self.classes, 7, 60, 'scene')
 
         elif config.SEMANTIC_FORM == 'FREQ':
-            overlap = torch.FloatTensor(get_object_vector(anno['overlap'], self.overlap_vector_size))
-            scene = torch.FloatTensor(get_object_vector(anno['scene'], self.scene_vector_size))
+            #print(anno['overlap'], anno['scene'])
+
+            overlap_padded = torch.zeros(20)
+            overlap_objs = torch.LongTensor(get_object_vector(anno['overlap'], self.overlap_vector_size))
+            if overlap_objs.shape[0] > 0:
+                overlap_objs = overlap_objs
+                overlap_padded[:overlap_objs.shape[0]] = overlap_objs
+
+            scene_padded = torch.zeros(70)
+            scene_objs = torch.LongTensor(get_object_vector(anno['scene'], self.scene_vector_size))
+            if scene_objs.shape[0] > 60:
+                print(anno['img_path'], anno['scene'])
+            if scene_objs.shape[0] > 0:
+                scene_objs = scene_objs
+                scene_padded[:scene_objs.shape[0]] = scene_objs
+
+            
+            #print(overlap_padded.shape)
 
         else:
             overlap = torch.zeros(1)
@@ -97,7 +113,7 @@ class Annotations_Dataset(Dataset):
 
         
 
-        return anno['img_path'], img, anno['utf8_string'], scene, overlap
+        return anno['img_path'], img, anno['utf8_string'], scene_padded, overlap_padded
 
 def get_bert_tokens(anno, classes, max_length, sequence_pad, key, encode_frequency = False):
     # tokens = []
@@ -130,12 +146,14 @@ def get_bert_tokens(anno, classes, max_length, sequence_pad, key, encode_frequen
 
 # takes a dictionary of type dict[object_label] = count and converts it to a sparse vector
 def get_object_vector(dict, length):
-    vector = [0] * length
+
+    objs_vectors = []
 
     for key, val in dict.items():
-        vector[int(key)] = val
+        for _ in range(val):
+            objs_vectors.append(int(key))
 
-    return vector
+    return objs_vectors
     
 def check_anno(anno_text):
     return anno_text == anno_text.strip().translate({ord(c): None for c in string.printable[-6:]+'/°-'})[0:25]#string.printable[-38:]+'°'})[0:25]
