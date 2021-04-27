@@ -89,8 +89,7 @@ def get_val_score(model):
             preds_prob = F.softmax(preds, dim=2)
             preds_max_prob, _ = preds_prob.max(dim=2)
 
-            print('--- Displaying sample 0 from current batch')
-            print('  - Overlap Objs:', tokenizer.decode(overlap_batch[0]))
+            if config.SEMANTIC_FORM == 'BERT': print('  - Overlap Objs:', tokenizer.decode(overlap_batch[0]))
             print('  - Ground truth:', text_batch[0])
             print('  - Prediction:  ', preds_str[0], '\n\n')
 
@@ -165,8 +164,8 @@ epochs = config.EPOCHS
 
 print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(params_num))
 
-base_case_correct, val_loss, pred_dict = get_val_score(model)
-df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'train_acc':'0'}, ignore_index=True)
+# base_case_correct, val_loss, pred_dict = get_val_score(model)
+# df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'train_acc':'0'}, ignore_index=True)
 print(df)
 
 best_model = config.MODEL_SAVE_THRESHOLD
@@ -215,27 +214,15 @@ for epoch in range(config.EPOCHS):
 
             pred_EOS = pred.find('[s]')
             pred = pred[:pred_EOS]  # prune after "end of sentence" token ([s])
-            pred_max_prob = pred_max_prob[:pred_EOS]
+            #pred_max_prob = pred_max_prob[:pred_EOS]
 
             #print('"' + text + '"' + ' - "' + str(pred) + '"')
 
-            if text in pred_dict.keys():
-                d_total, d_correct, ls = pred_dict[text]
-                if(text == str(pred)):
-                    train_correct += 1
-                    d_correct += 1
-                else:
-                    ls.append(str(pred))
-                d_total += 1
-                pred_dict[text] = (d_total, d_correct, ls)
-            else:
-                if(text == str(pred)):
-                    train_correct += 1
-                    pred_dict[text] = (1, 1, [])
-                else:
-                    pred_dict[text] = (1, 0, [str(pred)])
+            if(text == str(pred)):
+                train_correct += 1
 
             total += 1
+
         train_acc = round(train_correct*100/total,5)
         
         #

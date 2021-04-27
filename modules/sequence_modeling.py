@@ -29,35 +29,37 @@ class BidirectionalLSTM(nn.Module):
 
 from torch.nn.utils.weight_norm import weight_norm
 
-class TF_encoder(nn.Module):
+class TF_Encoder(nn.Module):
     def __init__(self):
-        super(TF_encoder, self).__init__()
+        super(TF_Encoder, self).__init__()
         #self.pos_encoder = PositionalEncoding1D(512)
         self.pos_encoder = PositionalEncoding(512)
-        self.encoder_layer = TransformerEncoderLayer(d_model=512, nhead=4, dim_feedforward=2048, dropout=0.2)
+        self.encoder_layer = TransformerEncoderLayer(d_model=512, nhead=8, dim_feedforward=2048, dropout=0.1)
         self.layer_norm = nn.LayerNorm(512)
         self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=6, norm=self.layer_norm)
 
-        self.mlp = MLP(input_size=1024, hidden_size=768, num_classes=512, num_layers=3)
-        self.linear = weight_norm(nn.Linear(512, 1), dim=None)
+        # self.mlp = MLP(input_size=1024, hidden_size=768, num_classes=512, num_layers=3)
+        # self.linear = weight_norm(nn.Linear(512, 1), dim=None)
 
     def forward(self, visual_features, overlap, scene, is_train):
-        overlap = torch.sum(overlap, dim=1, keepdim=True)
-        overlap = overlap.repeat(1, config.MAX_TEXT_LENGTH+1, 1)
-        visual_and_overlap = torch.cat((visual_features, overlap), dim=2)
+        # overlap = overlap.unsqueeze(1).repeat(1,26,1,1)
+        # col_features = visual_features.unsqueeze(2).repeat(1,1,20,1)
+        # col_and_overlap = torch.cat((col_features, overlap), dim=3)
 
-        relevance_scores = self.mlp(visual_and_overlap)
-        relevance_scores = self.linear(relevance_scores)
-        relevance_scores = nn.functional.softmax(relevance_scores, 1)
+        # relevance_scores = self.mlp(col_and_overlap)
+        # relevance_scores = self.linear(relevance_scores)
+        # relevance_scores = torch.sigmoid(relevance_scores)
 
-        if not is_train and str(overlap.device)[-1] == config.PRIMARY_DEVICE: # if running validation and is on primary device (to prevent multiple print outs if more than 1 gpu is being used)
-            print_list = relevance_scores[0].cpu().numpy().tolist()
-            print_list = [round(x, 2) for [x] in print_list]
-            print('  - Relevance scores:\n', print_list)
+        # if not is_train and str(overlap.device)[-1] == config.PRIMARY_DEVICE[-1]: # if running validation and is on primary device (to prevent multiple print outs if more than 1 gpu is being used)
+        #     rel_list = relevance_scores[0].squeeze(-1).cpu().numpy().tolist()
+        #     for i in range(config.MAX_TEXT_LENGTH+1):
+        #         print([round(j,1) for j in rel_list[i]])
 
-        relevant_overlap = relevance_scores * overlap
-
-        combined = visual_features# + relevant_overlap
+        # relevant_overlap = relevance_scores * overlap
+        # relevant_overlap = torch.sum(relevant_overlap, dim=2)
+        # combined = torch.cat((visual_features, relevant_overlap), dim=2)
+        combined = torch.cat((visual_features, overlap), dim=1)
+        #print(combined.shape)
         combined = combined.permute(1,0,2)
         combined = self.pos_encoder(combined)
 
@@ -97,7 +99,7 @@ class PositionalEncoding1D(nn.Module):
 import math
 class PositionalEncoding(nn.Module):
 
-    def __init__(self, d_model, dropout=0.1, max_len=26):
+    def __init__(self, d_model, dropout=0.1, max_len=46):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 

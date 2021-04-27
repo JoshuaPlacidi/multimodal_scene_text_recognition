@@ -11,8 +11,8 @@ import string
 from modules.transformation import TPS_SpatialTransformerNetwork
 from modules.feature_extraction import ResNet_FeatureExtractor
 from modules.semantic_vectors import Random, Zero, Seperate_Bert, Joined_Bert, Frequency
-from modules.sequence_modeling import BidirectionalLSTM, TF_encoder
-from modules.prediction import Attention, TF_decoder_pred, TF_encoder_prediction, LinearDecoder
+from modules.sequence_modeling import BidirectionalLSTM, TF_Encoder
+from modules.prediction import Attention, TF_Decoder, TF_encoder_prediction, Linear_Decoder
 
 character = string.printable[:-6]
 converter = AttnLabelConverter(character)
@@ -69,7 +69,7 @@ class Model(nn.Module):
                 BidirectionalLSTM(self.FeatureExtraction_output, hidden_size, hidden_size),
                 BidirectionalLSTM(hidden_size, hidden_size, hidden_size))
         elif config.ENCODER == 'Transformer':
-            self.SequenceModeling = TF_encoder()
+            self.SequenceModeling = TF_Encoder()
         else:
             raise Exception("Model.py Encoder Error: '" + config.ENCODER + "' not recognized")
 
@@ -80,9 +80,9 @@ class Model(nn.Module):
         if config.DECODER == "LSTM-Atn":
             self.Prediction = Attention(512, 512, num_classes)
         elif config.DECODER == "Transformer":
-            self.Prediction = TF_decoder_pred(512, num_classes, embed_dim=config.EMBED_DIM)
+            self.Prediction = TF_Decoder(512, num_classes, embed_dim=config.EMBED_DIM)
         elif config.DECODER == "Linear":
-            self.Prediction = LinearDecoder(num_classes)
+            self.Prediction = Linear_Decoder(num_classes)
         else:
             raise Exception("Model.py Decoder Error: '" + config.DECODER + "' not recognized")
 
