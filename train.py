@@ -164,8 +164,8 @@ epochs = config.EPOCHS
 
 print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(params_num))
 
-# base_case_correct, val_loss, pred_dict = get_val_score(model)
-# df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'train_acc':'0'}, ignore_index=True)
+base_case_correct, val_loss, pred_dict = get_val_score(model)
+df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'train_acc':'0'}, ignore_index=True)
 print(df)
 
 best_model = config.MODEL_SAVE_THRESHOLD

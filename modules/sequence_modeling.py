@@ -58,10 +58,14 @@ class TF_Encoder(nn.Module):
         # relevant_overlap = relevance_scores * overlap
         # relevant_overlap = torch.sum(relevant_overlap, dim=2)
         # combined = torch.cat((visual_features, relevant_overlap), dim=2)
-        combined = torch.cat((visual_features, overlap), dim=1)
+        #print(scene.shape)
+        visual_feature = visual_features.permute(1,0,2)
+        visual_feature = self.pos_encoder(visual_feature)
+        visual_feature = visual_features.permute(1,0,2)
+
+        combined = torch.cat((visual_features, overlap, scene), dim=1)
         #print(combined.shape)
         combined = combined.permute(1,0,2)
-        combined = self.pos_encoder(combined)
 
         output = self.encoder(combined)
         output = output.permute(1,0,2)

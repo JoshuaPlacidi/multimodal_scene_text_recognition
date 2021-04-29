@@ -90,16 +90,14 @@ class Annotations_Dataset(Dataset):
         elif config.SEMANTIC_FORM == 'FREQ':
             #print(anno['overlap'], anno['scene'])
 
-            overlap_padded = torch.zeros(20)
+            overlap_padded = torch.zeros(10)
             overlap_objs = torch.LongTensor(get_object_vector(anno['overlap'], self.overlap_vector_size))
             if overlap_objs.shape[0] > 0:
                 overlap_objs = overlap_objs
                 overlap_padded[:overlap_objs.shape[0]] = overlap_objs
 
-            scene_padded = torch.zeros(70)
+            scene_padded = torch.zeros(20)
             scene_objs = torch.LongTensor(get_object_vector(anno['scene'], self.scene_vector_size))
-            if scene_objs.shape[0] > 60:
-                print(anno['img_path'], anno['scene'])
             if scene_objs.shape[0] > 0:
                 scene_objs = scene_objs
                 scene_padded[:scene_objs.shape[0]] = scene_objs
@@ -150,8 +148,8 @@ def get_object_vector(dict, length):
     objs_vectors = []
 
     for key, val in dict.items():
-        for _ in range(val):
-            objs_vectors.append(int(key))
+        #for _ in range(val):
+        objs_vectors.append(int(key))
 
     return objs_vectors
     
