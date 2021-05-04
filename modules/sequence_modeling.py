@@ -13,14 +13,15 @@ class BidirectionalLSTM(nn.Module):
         self.rnn = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
         self.linear = nn.Linear(hidden_size * 2, output_size)
 
-    def forward(self, visual_features, overlap, scene, is_train):
+    def forward(self, col_feats): #, overlap, scene, is_train)
         """
         input : visual feature [batch_size x T x input_size]
         output : contextual feature [batch_size x T x output_size]
         """
+        #print('RUN')
         self.rnn.flatten_parameters()
 
-        recurrent, _ = self.rnn(visual_features)
+        recurrent, _ = self.rnn(col_feats)
 
         #recurrent, _ = self.rnn(input, (overlap, scene))  # batch_size x T x input_size -> batch_size x T x (2*hidden_size)
         output = self.linear(recurrent)  # batch_size x T x output_size
@@ -41,7 +42,7 @@ class TF_Encoder(nn.Module):
         # self.mlp = MLP(input_size=1024, hidden_size=768, num_classes=512, num_layers=3)
         # self.linear = weight_norm(nn.Linear(512, 1), dim=None)
 
-    def forward(self, visual_features, overlap, scene, is_train):
+    def forward(self, col_feats, overlap, scene, is_train):
         # overlap = overlap.unsqueeze(1).repeat(1,26,1,1)
         # col_features = visual_features.unsqueeze(2).repeat(1,1,20,1)
         # col_and_overlap = torch.cat((col_features, overlap), dim=3)
@@ -59,14 +60,13 @@ class TF_Encoder(nn.Module):
         # relevant_overlap = torch.sum(relevant_overlap, dim=2)
         # combined = torch.cat((visual_features, relevant_overlap), dim=2)
         #print(scene.shape)
-        visual_feature = visual_features.permute(1,0,2)
-        visual_feature = self.pos_encoder(visual_feature)
-        visual_feature = visual_features.permute(1,0,2)
+        col_feats = col_feats.permute(1,0,2)
+        col_feats = self.pos_encoder(col_feats)
+        col_feats = col_feats.permute(1,0,2)
 
-        combined = torch.cat((visual_features, overlap, scene), dim=1)
-        #print(combined.shape)
+        combined = col_feats # torch.cat((col_feats, overlap), dim=1)
+        #print('Combined: ', combined.shape)
         combined = combined.permute(1,0,2)
-
         output = self.encoder(combined)
         output = output.permute(1,0,2)
         
@@ -103,7 +103,7 @@ class PositionalEncoding1D(nn.Module):
 import math
 class PositionalEncoding(nn.Module):
 
-    def __init__(self, d_model, dropout=0.1, max_len=46):
+    def __init__(self, d_model, dropout=0.1, max_len=26):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 

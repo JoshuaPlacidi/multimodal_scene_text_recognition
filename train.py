@@ -3,10 +3,11 @@ import config
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 print('--- Experiment: ' + config.EXPERIMENT)
-print('  - Devices:', config.DEVICE_IDS)
-print('--- Training...')
+print('  - Model:')
 print('  - Encoder:', config.ENCODER)
 print('  - Decoder:', config.DECODER)
+print('  - Devices:', config.DEVICE_IDS)
+print('--- Training...')
 
 from transformers import BertTokenizer
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -29,15 +30,15 @@ import string
 import json
 import pandas as pd
 
-from coco_dataset import get_datasets
+from coco_dataset import get_datasets, get_syth_datasets
 from model import get_model
 
 import time
 
 device_ids = config.DEVICE_IDS
-device = torch.device(config.PRIMARY_DEVICE if torch.cuda.is_available() else 'cpu')
+device = torch.device(config.PRIMARY_DEVICE)
 
-train_ldr, val_ldr = get_datasets()
+train_ldr, val_ldr = get_syth_datasets()#get_datasets()
 
 ## Model Config
 
@@ -52,7 +53,7 @@ model = get_model(config.SAVED_MODEL)
 
 
 
-def get_val_score(model):
+def get_val_score(model, print_samples=False):
     print('  - Running Validation')
     model.eval()
 
@@ -65,12 +66,12 @@ def get_val_score(model):
     val_loss = 0
 
     with torch.no_grad():
-        for img_path_batch, img_batch, text_batch, scene_batch, overlap_batch in tqdm(val_ldr):
+        for img_batch, text_batch, scene_batch, overlap_batch in tqdm(val_ldr):
             image_tensor = img_batch
             text = text_batch
 
             image = image_tensor.to(device)
-            length_for_pred = torch.IntTensor([batch_max_length] * len(img_path_batch)).to(device)
+            length_for_pred = torch.IntTensor([batch_max_length] * len(img_batch)).to(device)
             text_for_pred = torch.LongTensor(config.BATCH_SIZE, batch_max_length + 1).fill_(0).to(device)
             scene_batch = scene_batch.to(device)
             overlap_batch = overlap_batch.to(device)
@@ -89,9 +90,10 @@ def get_val_score(model):
             preds_prob = F.softmax(preds, dim=2)
             preds_max_prob, _ = preds_prob.max(dim=2)
 
-            if config.SEMANTIC_FORM == 'BERT': print('  - Overlap Objs:', tokenizer.decode(overlap_batch[0]))
-            print('  - Ground truth:', text_batch[0])
-            print('  - Prediction:  ', preds_str[0], '\n\n')
+            if print_samples:
+                if config.SEMANTIC_FORM == 'BERT': print('  - Overlap Objs:', tokenizer.decode(overlap_batch[0]))
+                print('  - Ground truth:', text_batch[0])
+                print('  - Prediction:  ', preds_str[0], '\n\n')
 
             #time.sleep(10)
 
@@ -166,6 +168,7 @@ print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(
 
 base_case_correct, val_loss, pred_dict = get_val_score(model)
 df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'train_acc':'0'}, ignore_index=True)
+
 print(df)
 
 best_model = config.MODEL_SAVE_THRESHOLD
@@ -179,7 +182,7 @@ for epoch in range(config.EPOCHS):
     train_correct = 0
     total = 0
 
-    for img_path_batch, img_batch, text_batch, scene_vector_batch, overlap_vector_batch in tqdm(train_ldr):
+    for img_batch, text_batch, scene_vector_batch, overlap_vector_batch in tqdm(train_ldr):
         image = img_batch.to(device)
 
         scene_vector_batch = scene_vector_batch.to(device)
@@ -199,11 +202,15 @@ for epoch in range(config.EPOCHS):
         epoch_cost += cost.item()
 
         iteration += 1
+        if iteration % 500 == 0:
+            case_correct, val_loss, pred_dict = get_val_score(model)
+            print('  - iter ' +str(iteration) + ':', str(case_correct) +'% val acc')
+            
 
         #
         # ---------
         #
-        length_for_pred = torch.IntTensor([batch_max_length] * len(img_path_batch)).to(device)
+        length_for_pred = torch.IntTensor([batch_max_length] * len(img_batch)).to(device)
         _, preds_index = preds.max(2)
         preds_str = converter.decode(preds_index, length_for_pred)
 

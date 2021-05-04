@@ -11,7 +11,98 @@ from transformers import BertTokenizer
 import coco_text
 import config
 
+import lmdb
+import six
+import re
+
+
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+
+class LmdbDataset(Dataset):
+
+    def __init__(self, root):
+
+        self.root = root
+        self.env = lmdb.open(root, max_readers=32, readonly=True, lock=False, readahead=False, meminit=False)
+        if not self.env:
+            print('cannot create lmdb from %s' % (root))
+            raise Exception
+
+        with self.env.begin(write=False) as txn:
+            nSamples = int(txn.get('num-samples'.encode()))
+            self.nSamples = nSamples
+
+            self.to_tensor = transforms.ToTensor()
+            self.resize = transforms.Resize((32,100))
+
+            if False: # Filtering
+                # for fast check or benchmark evaluation with no filtering
+                self.filtered_index_list = [index + 1 for index in range(self.nSamples)]
+            else:
+                """ Filtering part
+                If you want to evaluate IC15-2077 & CUTE datasets which have special character labels,
+                use --data_filtering_off and only evaluate on alphabets and digits.
+                see https://github.com/clovaai/deep-text-recognition-benchmark/blob/6593928855fb7abb999a99f428b3e4477d4ae356/dataset.py#L190-L192
+                And if you want to evaluate them with the model trained with --sensitive option,
+                use --sensitive and --data_filtering_off,
+                see https://github.com/clovaai/deep-text-recognition-benchmark/blob/dff844874dbe9e0ec8c5a52a7bd08c7f20afe704/test.py#L137-L144
+                """
+                self.filtered_index_list = []
+                for index in range(self.nSamples):
+                    index += 1  # lmdb starts with 1
+                    label_key = 'label-%09d'.encode() % index
+                    label = txn.get(label_key).decode('utf-8')
+
+                    if len(label) > 26:
+                        # print(f'The length of the label is longer than max_length: length
+                        # {len(label)}, {label} in dataset {self.root}')
+                        continue
+
+                    # By default, images containing characters which are not in opt.character are filtered.
+                    # You can add [UNK] token to `opt.character` in utils.py instead of this filtering.
+                    out_of_char = f'[^{string.printable[:-6]}]'
+                    if re.search(out_of_char, label.lower()):
+                        continue
+
+                    self.filtered_index_list.append(index)
+
+                self.nSamples = len(self.filtered_index_list)
+
+    def __len__(self):
+        return self.nSamples
+
+    def __getitem__(self, index):
+        assert index <= len(self), 'index range error'
+        index = self.filtered_index_list[index]
+
+        with self.env.begin(write=False) as txn:
+            label_key = 'label-%09d'.encode() % index
+            label = txn.get(label_key).decode('utf-8')
+            img_key = 'image-%09d'.encode() % index
+            imgbuf = txn.get(img_key)
+
+            buf = six.BytesIO()
+            buf.write(imgbuf)
+            buf.seek(0)
+            try:
+                img = Image.open(buf).convert('L')
+                img = self.resize(img)
+                img = self.to_tensor(img)
+
+            except IOError:
+                print(f'Corrupted image for {index}')
+                # make dummy image and dummy label for corrupted image.
+                img = Image.new('L', (self.opt.imgW, self.opt.imgH))
+                label = '[dummy_label]'
+
+            # We only train and evaluate on alphanumerics (or pre-defined character set in train.py)
+            out_of_char = f'[^{string.printable[:-6]}]'
+            label = re.sub(out_of_char, '', label)
+
+            overlap = torch.zeros(1).to(config.PRIMARY_DEVICE)
+            scene = torch.zeros(1).to(config.PRIMARY_DEVICE)
+
+        return img, label, overlap, scene
 
 class Annotations_Dataset(Dataset):
     def __init__(self, set='train'):
@@ -111,7 +202,7 @@ class Annotations_Dataset(Dataset):
 
         
 
-        return anno['img_path'], img, anno['utf8_string'], scene_padded, overlap_padded
+        return img, anno['utf8_string'], scene_padded, overlap_padded
 
 def get_bert_tokens(anno, classes, max_length, sequence_pad, key, encode_frequency = False):
     # tokens = []
@@ -157,7 +248,7 @@ def check_anno(anno_text):
     return anno_text == anno_text.strip().translate({ord(c): None for c in string.printable[-6:]+'/°-'})[0:25]#string.printable[-38:]+'°'})[0:25]
 
 def get_datasets():
-    print('--- Loading Data')
+    print('  - Loading data from coco-text dataset')
     # txt_annos_path = "F:/dev/Datasets/COCO/2014/COCO_Text_2014.json"
     # feats_path = './comb_data/VG/area_resize.json'#'./comb_data/VG_area_resize_iou75.json' #new_comb.json  './comb_data/tfidf_area_resize.json'
     # image_path = "F:/dev/Datasets/COCO/2014/images/train2014/"
@@ -172,4 +263,23 @@ def get_datasets():
     print('  - ' + str(len(train_loader)) + ' training batches')
     print('  - ' + str(len(val_loader)) + ' val batches')
 
+    return train_loader, val_loader
+
+def get_syth_datasets():
+    print('  - Loading data from sythetic datasets')
+
+    mj_train_data = LmdbDataset(config.DEEP_TEXT_DATASET_PATH + 'training/MJ/MJ_train/')
+    mj_test_data = LmdbDataset(config.DEEP_TEXT_DATASET_PATH + 'training/MJ/MJ_test/')
+    mj_val_data = LmdbDataset(config.DEEP_TEXT_DATASET_PATH + 'training/MJ/MJ_valid/')
+    st_train_data = LmdbDataset(config.DEEP_TEXT_DATASET_PATH + 'training/ST/')
+
+    chained_data = torch.utils.data.ConcatDataset([mj_train_data, mj_test_data, mj_val_data, st_train_data])
+
+    train_loader = torch.utils.data.DataLoader(chained_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
+
+    val_data = LmdbDataset(config.DEEP_TEXT_DATASET_PATH + 'validation/')
+    val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
+
+    print('  - ' + str(len(train_loader)) + ' training batches')
+    print('  - ' + str(len(val_loader)) + ' val batches')
     return train_loader, val_loader

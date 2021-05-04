@@ -151,10 +151,13 @@ class TF_Decoder(nn.Module):
         self.emb_to_classes = nn.Linear(embed_dim, num_classes)
         self.pos_encoder = PositionalEncoding(config.EMBED_DIM)
 
+        self.semantic_to_embed = nn.Linear(hidden_size, embed_dim)
+
         self.num_classes = num_classes
         self.embed_dim = embed_dim
 
         #self.init_weights()
+        self.weighted_sum = torch.nn.Conv1d(in_channels=512, out_channels=1, kernel_size=1)
 
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
@@ -166,7 +169,17 @@ class TF_Decoder(nn.Module):
         self.fc.bias.data.zero_()
         self.fc.weight.data.uniform_(-initrange, initrange)
 
+    # def weighted_sum(self, x):
+    #     mult_x = torch.matmul(x,torch.transpose(x,2,1))
+    #     print(mult_x.shape)
+    #     return x
+
     def forward(self, encoder_output, text, overlap, scene, is_train):
+        #print(overlap.shape, scene.shape)
+        # cls_overlap = overlap * torch.nn.functional.softmax(self.weighted_sum(overlap.permute(0,2,1)).permute(0,2,1).squeeze(1), dim=1)
+        # cls_overlap = torch.sum(cls_overlap, dim=1)
+        # torch.sum(overlap, dim=1)
+        # print(cls_overlap.shape)
 
         # convert memory dim to character embedding dim
         memory = self.hid_to_emb(encoder_output)
@@ -182,8 +195,8 @@ class TF_Decoder(nn.Module):
             targets = targets.permute(1,0)
             
             
-            #targets[0,:] = overlap
             emb_targets = self.emb(targets)
+            #emb_targets[0] = self.semantic_to_embed(cls_overlap)
             emb_targets = self.pos_encoder(emb_targets)
 
             # generate target mask and pass to decoder
@@ -207,8 +220,9 @@ class TF_Decoder(nn.Module):
                 
                 # convert targets into embeddings and apply positional encoding
                 emb_targets = self.emb(targets.long())
+                #emb_targets[0] = self.semantic_to_embed(cls_overlap)
                 emb_targets = self.pos_encoder(emb_targets)
-                #emb_targets[0,:] = overlap
+                
 
                 # pass embed targets and encoder memory to decoder
                 t_output = self.decoder(tgt=emb_targets[:t+1], memory=memory, overlap=overlap, scene=scene, tgt_mask=target_mask)

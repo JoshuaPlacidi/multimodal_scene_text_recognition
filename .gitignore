@@ -14,3 +14,4 @@ results/models/*
 test_files/*
 text_localisation/*
 annotations/test/*
+base.pth

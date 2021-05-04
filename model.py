@@ -98,10 +98,10 @@ class Model(nn.Module):
         visual_features = visual_features.squeeze(3)
 
         # Semantic Vectors
-        overlap, scene = self.get_semantic_vectors(overlap, scene)
+        #overlap, scene = self.get_semantic_vectors(overlap, scene)
 
         # Encode
-        encoded_features = self.SequenceModeling(visual_features=visual_features, overlap=overlap, scene=scene, is_train=is_train)
+        encoded_features = self.SequenceModeling(col_feats=visual_features, overlap=overlap, scene=scene, is_train=is_train)
 
         # Decode
         prediction = self.Prediction(encoded_features.contiguous(), text=text, overlap=overlap, scene=scene, is_train=is_train)
