@@ -1,5 +1,7 @@
+import string
+
 # Set devices to use
-DEVICE_IDS=[1,0]
+DEVICE_IDS=[3,4]
 PRIMARY_DEVICE = 'cuda:' + str(DEVICE_IDS[0])
 
 #
@@ -7,28 +9,29 @@ PRIMARY_DEVICE = 'cuda:' + str(DEVICE_IDS[0])
 #
 RANDOM_SEED = 999
 BATCH_SIZE = 192
-EPOCHS = 20
+EPOCHS = 10
 MAX_TEXT_LENGTH = 25
+CHARS = string.printable[:-6]
 MODEL_SAVE_THRESHOLD = 0 # Once val accuraccy % passes this threshold highest accuraccy models are saved to ./results/models
 
 # Pretained model to use
-SAVED_MODEL = 'base.pth'#
+SAVED_MODEL = './results/models/new_mlp.pt'#base.pth'#./results/models/SCRATCH_SYTH_e_3.pt'#'base.pth'#
 
 
 # Model structure
 ENCODER = 'Transformer' # LSTM | Transformer
-DECODER = 'Transformer' # LSTM-Atn | Transformer | Linear
+DECODER = 'Transformer' # LSTM | Transformer | Linear
 
 # Netowork Dimensions (only used for transformer encoder currently)
 EMBED_DIM = 64
 HIDDEN_DIM = 512
 
 # Semantic vector processing
-SEMANTIC_SOURCE = 'COCO'
+SEMANTIC_SOURCE = 'vinvl' # VG | VinVL
 SEMANTIC_FORM = 'FREQ' # BERT | FREQ | ZERO | RAND
 
 # Name of experiement (used to save files)
-EXPERIMENT = 'base_test'#e6d1_emb64_SOS_TEST1'#'TEARS_2layers_lr0.0001_TFdecoder'
+EXPERIMENT = 'new_mlp'#e6d1_emb64_SOS_TEST1'#'TEARS_2layers_lr0.0001_TFdecoder'
 
 
 #

@@ -178,7 +178,7 @@ class TF_Decoder(nn.Module):
         #print(overlap.shape, scene.shape)
         # cls_overlap = overlap * torch.nn.functional.softmax(self.weighted_sum(overlap.permute(0,2,1)).permute(0,2,1).squeeze(1), dim=1)
         # cls_overlap = torch.sum(cls_overlap, dim=1)
-        # torch.sum(overlap, dim=1)
+        #cls_overlap = torch.sum(overlap, dim=1)
         # print(cls_overlap.shape)
 
         # convert memory dim to character embedding dim
@@ -196,7 +196,7 @@ class TF_Decoder(nn.Module):
             
             
             emb_targets = self.emb(targets)
-            #emb_targets[0] = self.semantic_to_embed(cls_overlap)
+            #emb_targets[0] = cls_overlap
             emb_targets = self.pos_encoder(emb_targets)
 
             # generate target mask and pass to decoder
@@ -220,7 +220,7 @@ class TF_Decoder(nn.Module):
                 
                 # convert targets into embeddings and apply positional encoding
                 emb_targets = self.emb(targets.long())
-                #emb_targets[0] = self.semantic_to_embed(cls_overlap)
+                #emb_targets[0] = cls_overlap
                 emb_targets = self.pos_encoder(emb_targets)
                 
 
@@ -337,18 +337,18 @@ class TransformerDecoderLayer(nn.Module):
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
 
+        # overlap = overlap.permute(1,0,2)
+        # #overlap = self.semantic_to_emb(overlap)
+        # semantic_tgt = self.semantic_multihead_attn(tgt, overlap, overlap)[0]
+        # tgt = tgt + self.dropout3(semantic_tgt)
+        # tgt = self.norm3(tgt)
+
         #print('prev:', tgt.shape, memory.shape)
         tgt2 = self.multihead_attn(tgt, memory, memory, attn_mask=memory_mask,
                                    key_padding_mask=memory_key_padding_mask)[0]
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
         
-        # overlap = overlap.permute(1,0,2).repeat(26,1,1)
-        # overlap = self.semantic_to_emb(overlap)
-        # semantic_tgt = self.semantic_multihead_attn(tgt, overlap, overlap)[0]
-        # tgt = tgt + self.dropout3(semantic_tgt)
-        # tgt = self.norm3(tgt)
-
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
         tgt = tgt + self.dropout4(tgt2)
         tgt = self.norm4(tgt)

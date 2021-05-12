@@ -15,3 +15,4 @@ test_files/*
 text_localisation/*
 annotations/test/*
 base.pth
+annotations/features/object_tags.json

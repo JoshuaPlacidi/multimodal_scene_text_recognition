@@ -11,10 +11,10 @@ import string
 from modules.transformation import TPS_SpatialTransformerNetwork
 from modules.feature_extraction import ResNet_FeatureExtractor
 from modules.semantic_vectors import Random, Zero, Seperate_Bert, Joined_Bert, Frequency
-from modules.sequence_modeling import BidirectionalLSTM, TF_Encoder
+from modules.sequence_modeling import BidirectionalLSTM, TF_Encoder, ImgBert
 from modules.prediction import Attention, TF_Decoder, TF_encoder_prediction, Linear_Decoder
 
-character = string.printable[:-6]
+character = config.CHARS
 converter = AttnLabelConverter(character)
 num_classes = len(converter.character)
 
@@ -73,12 +73,14 @@ class Model(nn.Module):
         else:
             raise Exception("Model.py Encoder Error: '" + config.ENCODER + "' not recognized")
 
+        #self.SequenceModeling = ImgBert()
+
         self.SequenceModeling_output = hidden_size
         
 
         # Decoder
-        if config.DECODER == "LSTM-Atn":
-            self.Prediction = Attention(512, 512, num_classes)
+        if config.DECODER == "LSTM":
+            self.Prediction = Attention(256, 256, num_classes)
         elif config.DECODER == "Transformer":
             self.Prediction = TF_Decoder(512, num_classes, embed_dim=config.EMBED_DIM)
         elif config.DECODER == "Linear":
@@ -98,10 +100,13 @@ class Model(nn.Module):
         visual_features = visual_features.squeeze(3)
 
         # Semantic Vectors
-        #overlap, scene = self.get_semantic_vectors(overlap, scene)
+        overlap, scene = self.get_semantic_vectors(overlap, scene)
 
         # Encode
-        encoded_features = self.SequenceModeling(col_feats=visual_features, overlap=overlap, scene=scene, is_train=is_train)
+        if config.ENCODER == 'Transformer':
+            encoded_features = self.SequenceModeling(col_feats=visual_features, overlap=overlap, scene=scene, is_train=is_train)
+        elif config.ENCODER == 'LSTM':
+            encoded_features = self.SequenceModeling(visual_features)
 
         # Decode
         prediction = self.Prediction(encoded_features.contiguous(), text=text, overlap=overlap, scene=scene, is_train=is_train)
@@ -119,11 +124,11 @@ def get_model(saved_model=None):
     if saved_model:
         pretrained_dict = torch.load(saved_model)
 
-        for k in del_keys:
-            if k in pretrained_dict.keys():
-                del pretrained_dict[k]
+        # for k in del_keys:
+        #     if k in pretrained_dict.keys():
+        #         del pretrained_dict[k]
 
 
-        model.load_state_dict(pretrained_dict, strict=False)
+        model.load_state_dict(pretrained_dict, strict=True)
 
     return model

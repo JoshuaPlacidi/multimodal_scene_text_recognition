@@ -127,27 +127,22 @@ class Joined_Bert(nn.Module):
 class Frequency(nn.Module):
     def __init__(self, output_dim=512):
         super(Frequency, self).__init__()
-        if config.SEMANTIC_SOURCE == 'VG':
-            self.fc_o = nn.Linear(config.EMBED_DIM, output_dim)
-            self.fc_s = nn.Linear(config.EMBED_DIM, output_dim)
+        self.fc_o = nn.Linear(config.EMBED_DIM, output_dim)
+        self.fc_s = nn.Linear(config.EMBED_DIM, output_dim)
 
-        elif config.SEMANTIC_SOURCE == 'COCO':
-            self.fc_o = nn.Linear(config.EMBED_DIM, output_dim)
-            self.fc_s = nn.Linear(config.EMBED_DIM, output_dim)
-
-        self.embed = nn.Embedding(92, config.EMBED_DIM)
+        self.embed_ = nn.Embedding(1489, config.EMBED_DIM)
 
     def forward(self, overlap, scene):
         # Embed object indexs
-        overlap = self.embed(overlap.long())
-        scene = self.embed(scene.long())
+        overlap = self.embed_(overlap.long())
+        scene = self.embed_(scene.long())
 
-        # Pass through linear layers
-        overlap = self.fc_o(overlap)
-        overlap = F.relu(overlap)
+        # # Pass through linear layers
+        # overlap = self.fc_o(overlap)
+        # overlap = F.relu(overlap)
 
-        scene = self.fc_s(scene)
-        scene = F.relu(scene)
+        # scene = self.fc_s(scene)
+        # scene = F.relu(scene)
 
         return overlap, scene
 

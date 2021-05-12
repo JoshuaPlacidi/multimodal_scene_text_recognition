@@ -30,7 +30,7 @@ import string
 import json
 import pandas as pd
 
-from coco_dataset import get_datasets, get_syth_datasets
+from coco_dataset import get_datasets, get_syth_datasets, get_cocotext_datasets
 from model import get_model
 
 import time
@@ -38,12 +38,10 @@ import time
 device_ids = config.DEVICE_IDS
 device = torch.device(config.PRIMARY_DEVICE)
 
-train_ldr, val_ldr = get_syth_datasets()#get_datasets()
+train_ldr, val_ldr = get_cocotext_datasets()#get_datasets()#get_syth_datasets()#
 
 ## Model Config
-
-character = string.printable[:-6]
-converter = AttnLabelConverter(character)
+converter = AttnLabelConverter(config.CHARS)
 
 batch_max_length = config.MAX_TEXT_LENGTH
 
@@ -138,7 +136,7 @@ if rgb:
     input_channel = 3
 
 
-converter = AttnLabelConverter(character)
+converter = AttnLabelConverter(config.CHARS)
 criterion = torch.nn.CrossEntropyLoss(ignore_index=0).to(device) 
 
 num_class = len(converter.character)
@@ -154,7 +152,7 @@ for p in filter(lambda p: p.requires_grad, model.parameters()):
 optimizer = optim.AdamW(filtered_parameters, lr=0.0001)#, betas=(beta1, 0.999))
 scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=5, gamma=0.1)
 
-df = pd.DataFrame(columns=['epoch','cost_avg','val_acc','train_acc'])
+df = pd.DataFrame(columns=['iter','cost_avg','val_acc','train_acc'])
 
 start_iter = 0
 start_time = time.time()
@@ -166,8 +164,8 @@ epochs = config.EPOCHS
 
 print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(params_num))
 
-base_case_correct, val_loss, pred_dict = get_val_score(model)
-df = df.append({'epoch': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'train_acc':'0'}, ignore_index=True)
+base_case_correct, val_loss, pred_dict = get_val_score(model, print_samples=True)
+df = df.append({'iter': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'train_acc':'0'}, ignore_index=True)
 
 print(df)
 
@@ -202,9 +200,20 @@ for epoch in range(config.EPOCHS):
         epoch_cost += cost.item()
 
         iteration += 1
-        if iteration % 500 == 0:
-            case_correct, val_loss, pred_dict = get_val_score(model)
-            print('  - iter ' +str(iteration) + ':', str(case_correct) +'% val acc')
+        if iteration % 100 == 0:
+            val_acc, val_loss, pred_dict = get_val_score(model, print_samples=False)
+            print('  - iter ' + str(iteration) + ':', str(val_acc) +'% | Best:' + str(best_model) + '%')
+
+            if val_acc > best_model:
+                df = df.append({'iter': iteration, 'cost_avg':0, 'val_acc':val_acc, 'train_acc':0}, ignore_index=True)
+                df.to_csv('./results/' + config.EXPERIMENT + '_training_log.csv', index=False)
+                print('  - ' + config.EXPERIMENT + ': New best model')
+                print(df)
+                best_model = val_acc
+                results_path = './results/models/' + config.EXPERIMENT
+                torch.save(model.state_dict(), results_path + '.pt')
+
+
             
 
         #
@@ -241,24 +250,24 @@ for epoch in range(config.EPOCHS):
         # preds_str = converter.decode(preds_index, length_for_pred)
         # print(text_batch[0] + ': ' + preds_str[0])
     
-    case_correct, val_loss, pred_dict = get_val_score(model)
+    #case_correct, val_loss, pred_dict = get_val_score(model, print_samples=True)
     scheduler.step()
 
 
-    epoch_avg = round(epoch_cost/len(train_ldr),5)
-    df = df.append({'epoch': (epoch+1), 'cost_avg':epoch_avg, 'val_acc':case_correct, 'train_acc':train_acc}, ignore_index=True)
-    df.to_csv('./results/' + config.EXPERIMENT + '_training_log.csv', index=False)
-    print(' - ' + config.EXPERIMENT)
-    print(df)
-    print('\n\n')
+    # epoch_avg = round(epoch_cost/len(train_ldr),5)
+    # df = df.append({'epoch': (epoch+1), 'cost_avg':epoch_avg, 'val_acc':case_correct, 'train_acc':train_acc}, ignore_index=True)
+    # df.to_csv('./results/' + config.EXPERIMENT + '_training_log.csv', index=False)
+    # print(' - ' + config.EXPERIMENT)
+    # print(df)
+    # print('\n\n')
 
-    if case_correct > best_model:
-        best_model = case_correct
-        results_path = './results/models/' + config.EXPERIMENT + '_e_' + str(epoch+1)
+    # if case_correct > best_model:
+    #     best_model = case_correct
+    #     results_path = './results/models/' + config.EXPERIMENT + '_e_' + str(epoch+1)
 
-        torch.save(model.state_dict(), results_path  + '.pt')
-        with open(results_path + '.json', 'w') as dict_file:
-            json.dump(pred_dict, dict_file)
-        print('  - Model + Val Dict saved to: ' + results_path + '\n\n')
+    #     torch.save(model.state_dict(), results_path  + '.pt')
+    #     with open(results_path + '.json', 'w') as dict_file:
+    #         json.dump(pred_dict, dict_file)
+    #     print('  - Model + Val Dict saved to: ' + results_path + '\n\n')
 
 print('--- Finished Training')
