@@ -122,20 +122,38 @@ class Joined_Bert(nn.Module):
 
         return overlap_emb, scene
 
-
+import numpy as np
 # Return frequency embedding initilisations
 class Frequency(nn.Module):
     def __init__(self, output_dim=512):
         super(Frequency, self).__init__()
-        self.fc_o = nn.Linear(config.EMBED_DIM, output_dim)
-        self.fc_s = nn.Linear(config.EMBED_DIM, output_dim)
+        # self.fc_o = nn.Linear(config.EMBED_DIM, output_dim)
+        # self.fc_s = nn.Linear(config.EMBED_DIM, output_dim)
 
         self.embed_ = nn.Embedding(1489, config.EMBED_DIM)
 
     def forward(self, overlap, scene):
         # Embed object indexs
-        overlap = self.embed_(overlap.long())
-        scene = self.embed_(scene.long())
+        overlap_mask = overlap.masked_fill(overlap == 0, -np.inf)
+        overlap_mask = overlap_mask.masked_fill(overlap_mask != -np.inf, 0)
+        # print(overlap[0])
+        # print(overlap_mask[0])
+
+        scene_mask = scene.masked_fill(scene == 0, -np.inf)
+        scene_mask = scene_mask.masked_fill(scene_mask != -np.inf, 0)
+
+        # print(overlap[0])
+        # print(overlap_mask[0])
+
+        # a = (overlap == 0).nonzero(as_tuple=True)
+        # print(len(a))
+        # print(a[0][0])
+        # a=e
+
+        overlap = self.embed_(overlap.long()).to(overlap.device)
+
+
+        scene = self.embed_(scene.long()).to(overlap.device)
 
         # # Pass through linear layers
         # overlap = self.fc_o(overlap)
@@ -144,6 +162,6 @@ class Frequency(nn.Module):
         # scene = self.fc_s(scene)
         # scene = F.relu(scene)
 
-        return overlap, scene
+        return overlap, overlap_mask, scene, scene_mask
 
         

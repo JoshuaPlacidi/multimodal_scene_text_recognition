@@ -50,17 +50,17 @@ class Model(nn.Module):
         self.AdaptiveAvgPool = nn.AdaptiveAvgPool2d((None, 1))  # Transform final (imgH/16-1) -> 1
 
 
-        # Semantic Vectors
-        if config.SEMANTIC_FORM == 'ZERO':
-            self.get_semantic_vectors = Zero()
-        elif config.SEMANTIC_FORM == 'RAND':
-            self.get_semantic_vectors = Random()
-        elif config.SEMANTIC_FORM == 'BERT':
-            self.get_semantic_vectors = Joined_Bert(output_dim=512)#Seperate_Bert_Initilisation()
-        elif config.SEMANTIC_FORM == 'FREQ':
-            self.get_semantic_vectors = Frequency()
-        else:
-            raise Exception("Model.py Semantic Vector Form Error: '" + config.SEMANTIC_VECTOR_FORM + "' not recognized")
+        # # Semantic Vectors
+        # if config.SEMANTIC_FORM == 'ZERO':
+        #     self.get_semantic_vectors = Zero()
+        # elif config.SEMANTIC_FORM == 'RAND':
+        #     self.get_semantic_vectors = Random()
+        # elif config.SEMANTIC_FORM == 'BERT':
+        #     self.get_semantic_vectors = Joined_Bert(output_dim=512)#Seperate_Bert_Initilisation()
+        # elif config.SEMANTIC_FORM == 'FREQ':
+        #     self.get_semantic_vectors = Frequency()
+        # else:
+        #     raise Exception("Model.py Semantic Vector Form Error: '" + config.SEMANTIC_VECTOR_FORM + "' not recognized")
 
 
         # Encoder
@@ -82,14 +82,14 @@ class Model(nn.Module):
         if config.DECODER == "LSTM":
             self.Prediction = Attention(256, 256, num_classes)
         elif config.DECODER == "Transformer":
-            self.Prediction = TF_Decoder(512, num_classes, embed_dim=config.EMBED_DIM)
+            self.Prediction = TF_Decoder(num_classes)
         elif config.DECODER == "Linear":
             self.Prediction = Linear_Decoder(num_classes)
         else:
             raise Exception("Model.py Decoder Error: '" + config.DECODER + "' not recognized")
 
     #def forward(self, input, text, scene_semantic, overlap_semantic, is_train=True):
-    def forward(self, input, text, scene, overlap, is_train=True):
+    def forward(self, input, text, overlap, scene, is_train=True):
 
         # Transformation
         input = self.Transformation(input)
@@ -100,11 +100,13 @@ class Model(nn.Module):
         visual_features = visual_features.squeeze(3)
 
         # Semantic Vectors
-        overlap, scene = self.get_semantic_vectors(overlap, scene)
+        # overlap, overlap_mask, scene, scene_mask = self.get_semantic_vectors(overlap, scene)
+
+        #print('over emb', overlap.shape)
 
         # Encode
         if config.ENCODER == 'Transformer':
-            encoded_features = self.SequenceModeling(col_feats=visual_features, overlap=overlap, scene=scene, is_train=is_train)
+            encoded_features = self.SequenceModeling(col_feats=visual_features, overlap=overlap, scene=scene, overlap_mask=None, scene_mask=None, is_train=is_train)
         elif config.ENCODER == 'LSTM':
             encoded_features = self.SequenceModeling(visual_features)
 
@@ -122,13 +124,15 @@ def get_model(saved_model=None):
     del_keys = ['module.SequenceModeling.0.rnn.weight_ih_l0', 'module.SequenceModeling.0.rnn.weight_hh_l0', 'module.SequenceModeling.0.rnn.bias_ih_l0', 'module.SequenceModeling.0.rnn.bias_hh_l0', 'module.SequenceModeling.0.rnn.weight_ih_l0_reverse', 'module.SequenceModeling.0.rnn.weight_hh_l0_reverse', 'module.SequenceModeling.0.rnn.bias_ih_l0_reverse', 'module.SequenceModeling.0.rnn.bias_hh_l0_reverse', 'module.SequenceModeling.0.linear.weight', 'module.SequenceModeling.0.linear.bias', 'module.SequenceModeling.1.rnn.weight_ih_l0', 'module.SequenceModeling.1.rnn.weight_hh_l0', 'module.SequenceModeling.1.rnn.bias_ih_l0', 'module.SequenceModeling.1.rnn.bias_hh_l0', 'module.SequenceModeling.1.rnn.weight_ih_l0_reverse', 'module.SequenceModeling.1.rnn.weight_hh_l0_reverse', 'module.SequenceModeling.1.rnn.bias_ih_l0_reverse', 'module.SequenceModeling.1.rnn.bias_hh_l0_reverse', 'module.SequenceModeling.1.linear.weight', 'module.SequenceModeling.1.linear.bias', 'module.Prediction.attention_cell.i2h.weight', 'module.Prediction.attention_cell.h2h.weight', 'module.Prediction.attention_cell.h2h.bias', 'module.Prediction.attention_cell.score.weight', 'module.Prediction.attention_cell.rnn.weight_ih', 'module.Prediction.attention_cell.rnn.weight_hh', 'module.Prediction.attention_cell.rnn.bias_ih', 'module.Prediction.attention_cell.rnn.bias_hh', 'module.Prediction.generator.weight', 'module.Prediction.generator.bias']
 
     if saved_model:
+        print('  - Loading model from:', saved_model)
         pretrained_dict = torch.load(saved_model)
 
         # for k in del_keys:
         #     if k in pretrained_dict.keys():
         #         del pretrained_dict[k]
 
-
-        model.load_state_dict(pretrained_dict, strict=True)
+        model.load_state_dict(pretrained_dict, strict=False)
+    else:
+        print('  - Training from scratch (no pretrained weights provided)')
 
     return model

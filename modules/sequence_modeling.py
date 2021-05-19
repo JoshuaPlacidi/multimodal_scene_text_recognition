@@ -54,51 +54,103 @@ class ImgBert(nn.Module):
     def forward(self, col_feats, overlap, scene, is_train):
         print(col_feats.shape, overlap.shape)
         return None
+import time
 
+import pandas as pd
 class TF_Encoder(nn.Module):
     def __init__(self):
         super(TF_Encoder, self).__init__()
-        #self.pos_encoder = PositionalEncoding1D(512)
-        self.pos_encoder_ = PositionalEncoding(512+64)
-        self.encoder_layer_ = TransformerEncoderLayer(d_model=(512+64), nhead=8, dim_feedforward=2048, dropout=0.1)
-        self.layer_norm_ = nn.LayerNorm(512+64)
-        self.encoder_ = nn.TransformerEncoder(self.encoder_layer_, num_layers=6, norm=self.layer_norm_)
+        self.pos_encoder = PositionalEncoding(config.HIDDEN_DIM)
+        self.encoder_layer = TransformerEncoderLayer(d_model=config.HIDDEN_DIM, nhead=8, dim_feedforward=2048, dropout=0.1)
+        self.layer_norm = nn.LayerNorm(config.HIDDEN_DIM)
+        self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=6, norm=self.layer_norm)
 
-        self.mlp = MLP(input_size=(512+64), hidden_size=512, num_classes=1, num_layers=3)
-        self.to_hid = nn.Linear((512+64), 512)
+        # self.overlap_mlp = MLP(input_size=(config.HIDDEN_DIM + config.EMBED_DIM), hidden_size=(config.HIDDEN_DIM + config.EMBED_DIM), num_classes=1, num_layers=3)
+        # self.scene_mlp = MLP(input_size=(config.HIDDEN_DIM + config.EMBED_DIM), hidden_size=(config.HIDDEN_DIM + config.EMBED_DIM), num_classes=1, num_layers=3)
 
-    def forward(self, col_feats, overlap, scene, is_train):
-        overlap = overlap.unsqueeze(1).repeat(1,26,1,1)
-        col_features = col_feats.unsqueeze(2).repeat(1,1,20,1)
-        col_and_overlap = torch.cat((col_features, overlap), dim=3)
+        # self.combine_mlp = MLP(input_size=(config.HIDDEN_DIM + (2*config.EMBED_DIM)), hidden_size= (config.HIDDEN_DIM + (2*config.EMBED_DIM)), num_classes=config.HIDDEN_DIM, num_layers=3)
 
-        scores = self.mlp(col_and_overlap)
-        scores = nn.functional.softmax(scores, dim=2)
+    # def get_relevant_semantic(self, col_feats, sem_vec, mask=None, is_train=False, source='overlap'):
+    #     #print('Start: ', col_feats.shape, sem_vec.shape)
+    #     sem_seq_len = sem_vec.shape[1]      # Number of objects
+    #     col_seq_len = col_feats.shape[1]    # Number of visual cols
 
-        relevant_overlap = overlap * scores
-        relevant_overlap = torch.sum(relevant_overlap, dim=2)
+    #     sem_seq = sem_vec.unsqueeze(1).repeat(1, col_seq_len, 1, 1)
+    #     col_seq = col_feats.unsqueeze(2).repeat(1, 1, sem_seq_len, 1)
+    #     # Reshape both tensors to [batch, col_seq_len, sem_seq_len, feats]
 
-        if not is_train and str(overlap.device)[-1] == config.PRIMARY_DEVICE[-1]: # if running validation and is on primary device (to prevent multiple print outs if more than 1 gpu is being used)
-            rel_list = scores[0].squeeze(-1).cpu().numpy().tolist()
-            for i in range(config.MAX_TEXT_LENGTH+1):
-                print([round(j,2) for j in rel_list[i]])
+    #     #print('Cat:  ', sem_seq.shape, col_seq.shape)
 
-        # relevant_overlap = relevance_scores * overlap
-        # relevant_overlap = torch.sum(relevant_overlap, dim=2)
-        # combined = torch.cat((visual_features, relevant_overlap), dim=2)
-        #print(scene.shape)
-        # col_feats = col_feats.permute(1,0,2)
-        # col_feats = self.pos_encoder(col_feats)
-        # col_feats = col_feats.permute(1,0,2)
+    #     col_and_sem = torch.cat((col_seq, sem_seq), dim=3)
 
-        combined = torch.cat((col_feats, relevant_overlap), dim=2)
-        #print('Combined: ', combined.shape)
-        combined = combined.permute(1,0,2)
-        combined = self.pos_encoder_(combined)
+    #     if source == 'overlap':
+    #         scores = self.overlap_mlp(col_and_sem)
+    #     elif source == 'scene':
+    #         scores = self.scene_mlp(col_and_sem)
+    #     scores = nn.functional.softmax(scores, dim=2)
+        
+    # #     scores = self.mlp(col_and_sem)
+    # #     mask = mask.unsqueeze(1).repeat(1,26,1).unsqueeze(-1)
+    # #    # print(scores[0,0])
+    # #     if str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
+    # #         print('MLP Scores:', scores[0,0][:5])
+    # #         print('Mask:', mask[0,0][:5])
+    # #     scores = scores * mask
+    # #     #print(mask[0,0])
+    # #     #print(scores[0,0])
+    # #     if str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
+    # #         print('Mask + Scores:',scores[0,0][:5])
+    # #     scores = nn.functional.softmax(scores, dim=2)
+    # #     # if str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
+    # #     #     print('Softmax:', scores[0,0][:5])
+    # #     # time.sleep(15)
 
-        output = self.encoder_(combined)
+
+    #     relevant_sem = sem_seq * scores
+    #     relevant_sem = torch.sum(relevant_sem, dim=2)
+
+    #     # if not is_train and str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]: # if running validation and is on primary device (to prevent multiple print outs if more than 1 gpu is being used)
+    #     #     rel_list = scores[0].squeeze(-1).cpu().numpy().tolist()
+    #     #     #t_list = scores[0].squeeze(-1).cpu().numpy().tolist()
+    #     #     cols = [i for i in range(min(sem_seq_len,25))]
+    #     #     df = pd.DataFrame(columns=cols)
+    #     #     for i in range(config.MAX_TEXT_LENGTH+1):
+    #     #         obj_scores = [(round(j*100,2)) for j in rel_list[i]][:min(sem_seq_len,25)]
+    #     #         #t = [j for j in t_list[i]][:15]
+    #     #         #obj_scores = [i if i > 1 else 0 for i in obj_scores]
+    #     #         df = df.append(pd.Series(obj_scores, index=cols), ignore_index=True)
+    #     #         #df = df.append(pd.Series(t, index=cols), ignore_index=True)
+    #     #     print(df)
+
+    #     #print('End:  ', relevant_sem.shape)
+
+    #     return relevant_sem
+
+
+    def forward(self, col_feats, overlap, scene, overlap_mask=None, scene_mask=None, is_train=False):
+        
+        if False:
+
+            rel_overlap = self.get_relevant_semantic(col_feats, overlap, overlap_mask, is_train=is_train, source='overlap')
+            rel_scene = self.get_relevant_semantic(col_feats, scene, scene_mask, is_train=is_train, source='scene')
+            #rel_scene = self.get_relevant_semantic(col_feats, scene, scene_mask, is_train)
+
+            #print(col_feats.shape, rel_overlap.shape, rel_scene.shape)
+
+            combined = torch.cat((col_feats, rel_overlap, rel_scene), dim=2)
+            #combined = self.lin_reduce(combined)
+            # combined = col_feats
+            # combined[:,:,:config.EMBED_DIM] = combined[:,:,:config.EMBED_DIM] + rel_overlap
+            #combined = col_feats
+            input = self.combine_mlp(combined)
+        else:
+            input = col_feats
+
+        input = input.permute(1,0,2)
+        input = self.pos_encoder(input)
+
+        output = self.encoder(input)
         output = output.permute(1,0,2)
-        output = self.to_hid(output)
         
         return output
 

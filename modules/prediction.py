@@ -7,7 +7,6 @@ import math
 from torch.nn.modules.sparse import Embedding
 import config
 
-
 class Attention(nn.Module):
 
     def __init__(self, input_size, hidden_size, num_classes):
@@ -141,23 +140,28 @@ import string
 converter = AttnLabelConverter(string.printable[:-6])
 
 class TF_Decoder(nn.Module):
-    def __init__(self, hidden_size, num_classes, embed_dim):
+    def __init__(self, num_classes):
         super(TF_Decoder, self).__init__()
-        self.decoder_layer = TransformerDecoderLayer(d_model=embed_dim, nhead=8, dim_feedforward=2048, dropout=0.1)
-        self.layer_norm = nn.LayerNorm(embed_dim)
+        self.decoder_layer = TransformerDecoderLayer(d_model=config.EMBED_DIM, nhead=8, dim_feedforward=2048, dropout=0.1)
+        self.layer_norm = nn.LayerNorm(config.EMBED_DIM)
         self.decoder = TransformerDecoder(self.decoder_layer, num_layers=6, norm=self.layer_norm)
-        self.hid_to_emb = nn.Linear(hidden_size, embed_dim)
-        self.emb = nn.Embedding(num_classes, embed_dim)
-        self.emb_to_classes = nn.Linear(embed_dim, num_classes)
+
         self.pos_encoder = PositionalEncoding(config.EMBED_DIM)
 
-        self.semantic_to_embed = nn.Linear(hidden_size, embed_dim)
+        self.hid_to_emb = nn.Linear(config.HIDDEN_DIM, config.EMBED_DIM)
+        self.emb = nn.Embedding(num_classes, config.EMBED_DIM)
+        self.emb_to_classes = nn.Linear(config.EMBED_DIM, num_classes)
 
         self.num_classes = num_classes
-        self.embed_dim = embed_dim
+
+
+        #self.semantic_to_embed = nn.Linear(hidden_size+64, embed_dim)
+
+        #self.mlp = MLP(input_size=(128), hidden_size=256, num_classes=1, num_layers=4)
+        #self.to_hid = nn.Linear((512+64), 512)
 
         #self.init_weights()
-        self.weighted_sum = torch.nn.Conv1d(in_channels=512, out_channels=1, kernel_size=1)
+        #self.weighted_sum = torch.nn.Conv1d(in_channels=512, out_channels=1, kernel_size=1)
 
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
@@ -174,15 +178,71 @@ class TF_Decoder(nn.Module):
     #     print(mult_x.shape)
     #     return x
 
-    def forward(self, encoder_output, text, overlap, scene, is_train):
-        #print(overlap.shape, scene.shape)
-        # cls_overlap = overlap * torch.nn.functional.softmax(self.weighted_sum(overlap.permute(0,2,1)).permute(0,2,1).squeeze(1), dim=1)
-        # cls_overlap = torch.sum(cls_overlap, dim=1)
-        #cls_overlap = torch.sum(overlap, dim=1)
-        # print(cls_overlap.shape)
+    # def get_relevant_semantic(self, feats, sem_vec, is_train):
+    #     #print('Start: ', col_feats.shape, sem_vec.shape)
+    #     sem_seq_len = sem_vec.shape[1]      # Number of objects
+    #     col_seq_len = feats.shape[1]    # Number of visual cols
 
+    #     sem_seq = sem_vec.unsqueeze(1).repeat(1, col_seq_len, 1, 1)
+    #     col_seq = feats.unsqueeze(2).repeat(1, 1, sem_seq_len, 1)
+    #     # Reshape both tensors to [batch, col_seq_len, sem_seq_len, feats]
+
+    #     #print('Cat:  ', sem_seq.shape, col_seq.shape)
+
+    #     col_and_sem = torch.cat((col_seq, sem_seq), dim=3)
+
+    #     scores = self.mlp(col_and_sem)
+    #     scores = nn.functional.softmax(scores, dim=2)
+        
+    # #     scores = self.mlp(col_and_sem)
+    # #     mask = mask.unsqueeze(1).repeat(1,26,1).unsqueeze(-1)
+    # #    # print(scores[0,0])
+    # #     if str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
+    # #         print('MLP Scores:', scores[0,0][:5])
+    # #         print('Mask:', mask[0,0][:5])
+    # #     scores = scores * mask
+    # #     #print(mask[0,0])
+    # #     #print(scores[0,0])
+    # #     if str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
+    # #         print('Mask + Scores:',scores[0,0][:5])
+    # #     scores = nn.functional.softmax(scores, dim=2)
+    # #     # if str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
+    # #     #     print('Softmax:', scores[0,0][:5])
+    # #     # time.sleep(15)
+
+
+    #     relevant_sem = sem_seq + scores
+    #     relevant_sem = torch.sum(relevant_sem, dim=2)
+
+    #     if not is_train and str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]: # if running validation and is on primary device (to prevent multiple print outs if more than 1 gpu is being used)
+    #         rel_list = scores[0].squeeze(-1).cpu().numpy().tolist()
+    #         #t_list = scores[0].squeeze(-1).cpu().numpy().tolist()
+    #         cols = [i for i in range(min(sem_seq_len,25))]
+    #         df = pd.DataFrame(columns=cols)
+    #         for i in range(config.MAX_TEXT_LENGTH+1):
+    #             obj_scores = [(round(j*100,2)) for j in rel_list[i]][:min(sem_seq_len,25)]
+    #             #t = [j for j in t_list[i]][:15]
+    #             #obj_scores = [i if i > 1 else 0 for i in obj_scores]
+    #             df = df.append(pd.Series(obj_scores, index=cols), ignore_index=True)
+    #             #df = df.append(pd.Series(t, index=cols), ignore_index=True)
+    #         print(df)
+
+    #     #print('End:  ', relevant_sem.shape)
+
+    #     return relevant_sem
+        
+
+    def forward(self, encoder_output, text, overlap, scene, is_train):
         # convert memory dim to character embedding dim
+
+        #relevant_overlap = self.get_relevant_overlap(overlap, encoder_output, is_train)
+        #encoder_seq = torch.cat((encoder_output, relevant_overlap), dim=2)
+        #memory = self.hid_to_emb_(encoder_seq)
         memory = self.hid_to_emb(encoder_output)
+
+        #overlap = self.get_relevant_semantic(memory, overlap, is_train)
+        #scene = self.get_relevant_semantic(memory, scene, is_train)
+
         memory = memory.permute(1,0,2)
 
         #overlap = overlap[:,0,:].unsqueeze(1)
@@ -191,6 +251,7 @@ class TF_Decoder(nn.Module):
 
             # convert targets from [batch, seq, feats] -> [seq, batch, feats] and apply embedding and position encoding
             targets = text[:memory.shape[1],:]
+            #if str(overlap.device)[-1] == config.PRIMARY_DEVICE[-1]: print('train tar:', targets[0])
             #if str(overlap.device)[-1] == config.PRIMARY_DEVICE[-1]: print('Train targets:', targets[0])
             targets = targets.permute(1,0)
             
@@ -209,8 +270,11 @@ class TF_Decoder(nn.Module):
         else: # Inference
 
             # Declare targets and output as zero tensors of output shape
-            targets = torch.zeros(config.MAX_TEXT_LENGTH+1, memory.shape[1])
-            targets = targets.to(encoder_output.device)
+            targets = torch.zeros(memory.shape[1], config.MAX_TEXT_LENGTH+1).to(encoder_output.device)
+            #if str(overlap.device)[-1] == config.PRIMARY_DEVICE[-1]: print('val tar:', targets[0])
+
+            targets = targets.permute(1,0)
+
 
             output = torch.zeros(config.MAX_TEXT_LENGTH, memory.shape[1], self.num_classes).to(encoder_output.device)
 
@@ -243,7 +307,7 @@ class TF_Decoder(nn.Module):
 class Linear_Decoder(nn.Module):
     def __init__(self, num_classes):
         super(Linear_Decoder, self).__init__()
-        self.linear_decoder = nn.Linear(1024, num_classes)
+        self.linear_decoder = nn.Linear(config.HIDDEN_DIM, num_classes)
         self.init_weights()
 
     def init_weights(self):
@@ -284,7 +348,7 @@ class TransformerDecoder(nn.Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, tgt, memory, overlap, scene, tgt_mask= None, memory_mask = None, tgt_key_padding_mask = None, memory_key_padding_mask = None):
+    def forward(self, tgt, memory, overlap, scene, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
             output = tgt
 
             for mod in self.layers:
@@ -299,20 +363,22 @@ class TransformerDecoder(nn.Module):
             return output
 
 
-
+import pandas as pd
 # TransformerDecoderLayer taken directly from PyTorch source code: https://pytorch.org/docs/stable/generated/torch.nn.TransformerDecoderLayer.html#torch.nn.TransformerDecoderLayer
 class TransformerDecoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1):
         super(TransformerDecoderLayer, self).__init__()
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.semantic_multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        
+        self.multihead_overlap = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
 
 
-        self.semantic_to_emb = nn.Linear(512, d_model)
+        self.semantic_to_emb = nn.Linear(config.HIDDEN_DIM, config.EMBED_DIM)
 
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
@@ -330,26 +396,77 @@ class TransformerDecoderLayer(nn.Module):
             state['activation'] = F.relu
         super(TransformerDecoderLayer, self).__setstate__(state)
 
-    def forward(self, tgt, memory, overlap, scene, tgt_mask = None, memory_mask = None, tgt_key_padding_mask = None, memory_key_padding_mask = None):
-
+    def forward(self, tgt, memory, overlap, scene, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None,):
+        
         tgt2 = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask,
                               key_padding_mask=tgt_key_padding_mask)[0]
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
-
-        # overlap = overlap.permute(1,0,2)
-        # #overlap = self.semantic_to_emb(overlap)
-        # semantic_tgt = self.semantic_multihead_attn(tgt, overlap, overlap)[0]
-        # tgt = tgt + self.dropout3(semantic_tgt)
-        # tgt = self.norm3(tgt)
-
         #print('prev:', tgt.shape, memory.shape)
+
         tgt2 = self.multihead_attn(tgt, memory, memory, attn_mask=memory_mask,
                                    key_padding_mask=memory_key_padding_mask)[0]
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
+
+
+        # semantic_tgt = self.multihead_overlap(tgt, scene, scene)[0]
+        # tgt = tgt + self.dropout3(semantic_tgt)
+        # tgt = self.norm3(tgt)
+
+
         
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
         tgt = tgt + self.dropout4(tgt2)
         tgt = self.norm4(tgt)
         return tgt
+
+
+import math
+from collections import OrderedDict
+
+class MLP(nn.Module):
+    """A simple MLP.
+    """
+
+    def __init__(self, input_size, hidden_size, num_classes,
+                 num_layers=1, dropout_p=0.0):
+        """Constructor for MLP.
+        Args:
+            input_size: The number of input dimensions.
+            hidden_size: The number of hidden dimensions for each layer.
+            num_classes: The size of the output.
+            num_layers: The number of hidden layers.
+            dropout_p: Dropout probability.
+        """
+        super(MLP, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_classes = num_classes
+        layers = []
+        for i in range(num_layers):
+            idim = hidden_size
+            odim = hidden_size
+            if i == 0:
+                idim = input_size
+            if i == num_layers-1:
+                odim = num_classes
+            fc = nn.Linear(idim, odim)
+            fc.weight.data.normal_(0.0,  math.sqrt(2. / idim))
+            fc.bias.data.fill_(0)
+            layers.append(('fc'+str(i), fc))
+            if i != num_layers-1:
+                layers.append(('relu'+str(i), nn.ReLU()))
+                layers.append(('dropout'+str(i), nn.Dropout(p=dropout_p)))
+        self.layers = nn.Sequential(OrderedDict(layers))
+
+    def params_to_train(self):
+        return self.layers.parameters()
+
+    def forward(self, x):
+        """Propagate through all the hidden layers.
+        Args:
+            x: Input of self.input_size dimensions.
+        """
+        out = self.layers(x)
+        return out

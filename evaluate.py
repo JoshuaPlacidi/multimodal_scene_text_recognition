@@ -29,38 +29,93 @@ from io import StringIO
 import numpy as np
 from matplotlib.pyplot import imshow
 import numpy as np
+import time
 
-model = get_model(config.SAVED_MODEL).eval()
+
+saved_model = './results/models/scratch.pt'
+
+model = get_model(saved_model)
+model.eval()
+
+import json
+with open('./annotations/features/' + config.SEMANTIC_SOURCE.lower() + '_classes.txt') as f:
+    obj_class_labels = f.read().splitlines()
+
+with open('./annotations/error_anno_ids.txt') as f:
+    error_ids = f.read().splitlines()
 
 val_data = get_val_data()
 
 errors = []
 
 print('  - Running evaluation on', len(val_data), 'images')
+#time.sleep(15)
 
-for anno, image, label, overlap, scene in tqdm(val_data):
-    #print(anno)
-    text_in = torch.LongTensor(config.BATCH_SIZE, config.MAX_TEXT_LENGTH + 1).fill_(0).to(config.PRIMARY_DEVICE)
-    
-    length_for_pred = torch.IntTensor([config.MAX_TEXT_LENGTH]).to(config.PRIMARY_DEVICE)
-    image = image.unsqueeze(0).to(config.PRIMARY_DEVICE)
+corrections = 0
+total = 0
 
-    pred = model(input=image, text=text_in, overlap=overlap, scene=scene, is_train=False)
+ids = [17164, 156586, 14847, 27009, 105279, 103047, 101651, 123201, 77915, 21877, 155509, 159040, 43365, 168639, 38327]
 
-    _, pred_index = pred.max(2)
-    pred_str = converter.decode(pred_index, length_for_pred)[0]
-    pred_str = pred_str[:pred_str.find('[s]')]
-    #print(pred_str)
+with torch.no_grad():
+    for image, label, scene, overlap in tqdm(val_data):
+        # print(type(error_ids[0]), type(anno['id']))
+        # break
+        if True:#str(anno['id']) not in error_ids:
+            #print(anno)
+            text_in = torch.LongTensor(config.BATCH_SIZE, config.MAX_TEXT_LENGTH + 1).fill_(0).to(config.PRIMARY_DEVICE)
+            
+            length_for_pred = torch.IntTensor([config.MAX_TEXT_LENGTH]).to(config.PRIMARY_DEVICE)
 
-    if pred_str != label:
-        anno['pred'] = pred_str
-        errors.append(anno)
+            overlap_list = list(overlap.numpy())
+            overlap_tags = [obj_class_labels[int(i)-1] for i in overlap_list if i != 0]
 
-with open('./results/eval_results.txt', 'w') as f:
+            scene_list = list(scene.numpy())
+            scene_tags = [obj_class_labels[int(i)-1] for i in scene_list if i != 0]
+            scene_tags = list(zip(scene_tags, [i for i in range(len(scene_tags))]))
+            
+
+            # Add batch dimension
+            image = image.unsqueeze(0).to(config.PRIMARY_DEVICE)
+            overlap = overlap.unsqueeze(0).to(config.PRIMARY_DEVICE)
+            scene = scene.unsqueeze(0).to(config.PRIMARY_DEVICE)
+
+            #print('over in', overlap.shape)
+            pred = model(input=image, text=text_in, overlap=overlap, scene=scene, is_train=False)
+
+            _, pred_index = pred.max(2)
+            pred_str = converter.decode(pred_index, length_for_pred)[0]
+            pred_str = pred_str[:pred_str.find('[s]')]
+            print(pred_str, label)
+            #print(anno['id'], ': ' + label + ' : ' + pred_str)
+            # if label != pred_str:
+            #     # print(anno['id'])
+            #     # print(scene_tags)
+            #     #print(overlap_tags)
+            #     anno['pred'] = pred_str
+            #     errors.append(anno)
+            #     #time.sleep(30)
+                
+            #     corrections += 1
+            # #     # print('Corrections:', corrections)
+            # #     # print('Total', total)
+            #     print('Corrections:', round(corrections * 100/total, 2))
+            total += 1
+
+print('Corrections:', corrections)
+print('Total:', len(val_data))
+            
+
+            
+
+#         if pred_str != label:
+#             anno['pred'] = pred_str
+#             errors.append(anno)
+
+with open('./results/sem_errors.txt', 'w') as f:
     for item in errors:
         f.write("%s\n" % item)
 
-print('  - Saved to file')
+# print('  - Saved to file')
 
 # datasets_paths = ["CUTE80", "IC03_860", "IC03_867", "IC13_857", "IC13_1015", "IC15_1811", "IC15_2077", "IIIT5k_3000", "SVT", "SVTP"]
 

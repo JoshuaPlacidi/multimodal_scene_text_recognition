@@ -16,3 +16,4 @@ text_localisation/*
 annotations/test/*
 base.pth
 annotations/features/object_tags.json
+annotations/error_anno_ids.txt

@@ -3,7 +3,6 @@ import config
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 print('--- Experiment: ' + config.EXPERIMENT)
-print('  - Model:')
 print('  - Encoder:', config.ENCODER)
 print('  - Decoder:', config.DECODER)
 print('  - Devices:', config.DEVICE_IDS)
@@ -38,7 +37,7 @@ import time
 device_ids = config.DEVICE_IDS
 device = torch.device(config.PRIMARY_DEVICE)
 
-train_ldr, val_ldr = get_cocotext_datasets()#get_datasets()#get_syth_datasets()#
+train_ldr, val_ldr = get_syth_datasets()#get_cocotext_datasets()#get_datasets()#
 
 ## Model Config
 converter = AttnLabelConverter(config.CHARS)
@@ -64,19 +63,21 @@ def get_val_score(model, print_samples=False):
     val_loss = 0
 
     with torch.no_grad():
-        for img_batch, text_batch, scene_batch, overlap_batch in tqdm(val_ldr):
+        for img_batch, text_batch, overlap_batch, scene_batch in tqdm(val_ldr):
             image_tensor = img_batch
             text = text_batch
 
             image = image_tensor.to(device)
             length_for_pred = torch.IntTensor([batch_max_length] * len(img_batch)).to(device)
             text_for_pred = torch.LongTensor(config.BATCH_SIZE, batch_max_length + 1).fill_(0).to(device)
-            scene_batch = scene_batch.to(device)
+
             overlap_batch = overlap_batch.to(device)
+
+            scene_batch = scene_batch.to(device)
 
             #encoded_text, _ = converter.encode(text_batch, batch_max_length=batch_max_length)
 
-            preds = model(image, text_for_pred, scene_batch, overlap_batch, is_train=False)
+            preds = model(image, text_for_pred, overlap_batch, scene_batch, is_train=False)
 
             #target = encoded_text[:, 1:]  # without [GO] Symbol
             # cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
@@ -165,9 +166,13 @@ epochs = config.EPOCHS
 print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(params_num))
 
 base_case_correct, val_loss, pred_dict = get_val_score(model, print_samples=True)
+#base_case_correct = 0
 df = df.append({'iter': '0', 'cost_avg':'n/a', 'val_acc':base_case_correct, 'train_acc':'0'}, ignore_index=True)
 
 print(df)
+
+train_correct = 0
+total = 0
 
 best_model = config.MODEL_SAVE_THRESHOLD
 
@@ -177,17 +182,15 @@ for epoch in range(config.EPOCHS):
     epoch_cost = 0
     print('  - Epoch: ' + str(epoch+1))
 
-    train_correct = 0
-    total = 0
 
-    for img_batch, text_batch, scene_vector_batch, overlap_vector_batch in tqdm(train_ldr):
+    for img_batch, text_batch, overlap, scene in tqdm(train_ldr):
         image = img_batch.to(device)
 
-        scene_vector_batch = scene_vector_batch.to(device)
-        overlap_vector_batch = overlap_vector_batch.to(device)
+        overlap = overlap.to(device)   
+        scene = scene.to(device)
 
         text, length = converter.encode(text_batch, batch_max_length=batch_max_length)
-        preds = model(image, text[:, :-1], scene_vector_batch, overlap_vector_batch)
+        preds = model(image, text[:, :-1], overlap, scene)
         target = text[:, 1:]  # without [GO] Symbol
 
         cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
@@ -199,22 +202,6 @@ for epoch in range(config.EPOCHS):
         loss_avg.add(cost)
         epoch_cost += cost.item()
 
-        iteration += 1
-        if iteration % 100 == 0:
-            val_acc, val_loss, pred_dict = get_val_score(model, print_samples=False)
-            print('  - iter ' + str(iteration) + ':', str(val_acc) +'% | Best:' + str(best_model) + '%')
-
-            if val_acc > best_model:
-                df = df.append({'iter': iteration, 'cost_avg':0, 'val_acc':val_acc, 'train_acc':0}, ignore_index=True)
-                df.to_csv('./results/' + config.EXPERIMENT + '_training_log.csv', index=False)
-                print('  - ' + config.EXPERIMENT + ': New best model')
-                print(df)
-                best_model = val_acc
-                results_path = './results/models/' + config.EXPERIMENT
-                torch.save(model.state_dict(), results_path + '.pt')
-
-
-            
 
         #
         # ---------
@@ -230,6 +217,7 @@ for epoch in range(config.EPOCHS):
 
             pred_EOS = pred.find('[s]')
             pred = pred[:pred_EOS]  # prune after "end of sentence" token ([s])
+           # print(text, str(pred))
             #pred_max_prob = pred_max_prob[:pred_EOS]
 
             #print('"' + text + '"' + ' - "' + str(pred) + '"')
@@ -244,6 +232,30 @@ for epoch in range(config.EPOCHS):
         #
         # -----------
         #
+
+
+
+        iteration += 1
+        if iteration % 2000 == 0:
+            val_acc, val_loss, pred_dict = get_val_score(model, print_samples=True)
+            print('  - iter ' + str(iteration) + ':', str(val_acc) +'% | Best:' + str(best_model) + '%')
+
+            if val_acc > best_model:
+                df = df.append({'iter': iteration, 'cost_avg':0, 'val_acc':val_acc, 'train_acc':train_acc}, ignore_index=True)
+                df.to_csv('./results/' + config.EXPERIMENT + '_training_log.csv', index=False)
+                print('  - ' + config.EXPERIMENT + ': New best model')
+                best_model = val_acc
+                results_path = './results/models/' + config.EXPERIMENT
+                torch.save(model.state_dict(), results_path + '.pt')
+
+                train_correct = 0
+                total = 0
+            print(df)
+
+
+            
+
+
 
         # length_for_pred = torch.IntTensor([config.MAX_TEXT_LENGTH] * len(img_path_batch))
         # _, preds_index = preds.max(2)

@@ -137,7 +137,7 @@ class AttnLabelConverter(object):
             text.append('[s]')
             text = [self.dict[char] for char in text]
             batch_text[i][1:1 + len(text)] = torch.LongTensor(text)  # batch_text[:, 0] = [GO] token
-            TF: batch_text[i][0] = torch.tensor(0)
+            batch_text[i][0] = torch.tensor(0)
         return (batch_text.to(config.PRIMARY_DEVICE), torch.IntTensor(length).to(config.PRIMARY_DEVICE))
 
     def decode(self, text_index, length):
