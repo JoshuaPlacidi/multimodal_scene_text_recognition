@@ -6,19 +6,17 @@ import torch.nn.functional as F
 torch.backends.cudnn.enabled = False
 
 from utils import AttnLabelConverter
-import string
 
 from modules.transformation import TPS_SpatialTransformerNetwork
 from modules.feature_extraction import ResNet_FeatureExtractor
-from modules.semantic_vectors import Random, Zero, Seperate_Bert, Joined_Bert, Frequency
-from modules.sequence_modeling import BidirectionalLSTM, TF_Encoder, ImgBert
-from modules.prediction import Attention, TF_Decoder, TF_encoder_prediction, Linear_Decoder
+from modules.semantic_vectors import Linear_Embedding, Bert_Embedding, Zero, Random
+from modules.encoders import BidirectionalLSTM, TF_Encoder, Oscar_Bert
+from modules.decoders import Attention, TF_Decoder, Linear_Decoder
 
 character = config.CHARS
 converter = AttnLabelConverter(character)
 num_classes = len(converter.character)
 
-batch_max_length = config.MAX_TEXT_LENGTH
 imgH = 32
 imgW = 100
 num_fiducial = 20
@@ -30,9 +28,7 @@ output_channel = 512
 # LSTM hidden state size
 hidden_size = 256
 
-rgb = False
 input_channel = 1
-if rgb: input_channel = 3
 
 class Model(nn.Module):
 
@@ -51,33 +47,30 @@ class Model(nn.Module):
 
 
         # # Semantic Vectors
-        # if config.SEMANTIC_FORM == 'ZERO':
-        #     self.get_semantic_vectors = Zero()
-        # elif config.SEMANTIC_FORM == 'RAND':
-        #     self.get_semantic_vectors = Random()
-        # elif config.SEMANTIC_FORM == 'BERT':
-        #     self.get_semantic_vectors = Joined_Bert(output_dim=512)#Seperate_Bert_Initilisation()
-        # elif config.SEMANTIC_FORM == 'FREQ':
-        #     self.get_semantic_vectors = Frequency()
-        # else:
-        #     raise Exception("Model.py Semantic Vector Form Error: '" + config.SEMANTIC_VECTOR_FORM + "' not recognized")
+        if config.SEMANTIC_FORM == 'ZERO':
+            self.get_semantic_vectors = Zero()
+        elif config.SEMANTIC_FORM == 'RAND':
+            self.get_semantic_vectors = Random()
+        elif config.SEMANTIC_FORM == 'BERT':
+            self.get_semantic_vectors = Bert_Embedding()
+        elif config.SEMANTIC_FORM == 'FREQ':
+            self.get_semantic_vectors = Linear_Embedding()
+        else:
+            raise Exception("Model.py Semantic Vector Form Error: '" + config.SEMANTIC_VECTOR_FORM + "' not recognized")
 
 
         # Encoder
         if config.ENCODER == 'LSTM':
-            self.SequenceModeling = nn.Sequential(
+            self.encoder = nn.Sequential(
                 BidirectionalLSTM(self.FeatureExtraction_output, hidden_size, hidden_size),
                 BidirectionalLSTM(hidden_size, hidden_size, hidden_size))
         elif config.ENCODER == 'Transformer':
-            self.SequenceModeling = TF_Encoder()
+            self.encoder = TF_Encoder()
+        elif config.ENCODER == 'Oscar':
+            self.encoder = Oscar_Bert()
         else:
             raise Exception("Model.py Encoder Error: '" + config.ENCODER + "' not recognized")
-
-        #self.SequenceModeling = ImgBert()
-
-        self.SequenceModeling_output = hidden_size
         
-
         # Decoder
         if config.DECODER == "LSTM":
             self.Prediction = Attention(256, 256, num_classes)
@@ -100,15 +93,13 @@ class Model(nn.Module):
         visual_features = visual_features.squeeze(3)
 
         # Semantic Vectors
-        # overlap, overlap_mask, scene, scene_mask = self.get_semantic_vectors(overlap, scene)
-
-        #print('over emb', overlap.shape)
+        overlap, scene = self.get_semantic_vectors(overlap, scene)
 
         # Encode
-        if config.ENCODER == 'Transformer':
-            encoded_features = self.SequenceModeling(col_feats=visual_features, overlap=overlap, scene=scene, overlap_mask=None, scene_mask=None, is_train=is_train)
-        elif config.ENCODER == 'LSTM':
+        if config.ENCODER == 'LSTM':
             encoded_features = self.SequenceModeling(visual_features)
+        else:
+            encoded_features = self.SequenceModeling(col_feats=visual_features, overlap=overlap, scene=scene, is_train=is_train)
 
         # Decode
         prediction = self.Prediction(encoded_features.contiguous(), text=text, overlap=overlap, scene=scene, is_train=is_train)
@@ -116,22 +107,19 @@ class Model(nn.Module):
         return prediction
 
 def get_model(saved_model=None):
-
+    '''
+    input: saved_model = the path to pretrained weights to load model from, if None then wont load any weights
+    return: model
+    '''
     model = Model()
     model = torch.nn.DataParallel(model, device_ids=config.DEVICE_IDS)
     model = model.to(config.PRIMARY_DEVICE)
 
-    del_keys = ['module.SequenceModeling.0.rnn.weight_ih_l0', 'module.SequenceModeling.0.rnn.weight_hh_l0', 'module.SequenceModeling.0.rnn.bias_ih_l0', 'module.SequenceModeling.0.rnn.bias_hh_l0', 'module.SequenceModeling.0.rnn.weight_ih_l0_reverse', 'module.SequenceModeling.0.rnn.weight_hh_l0_reverse', 'module.SequenceModeling.0.rnn.bias_ih_l0_reverse', 'module.SequenceModeling.0.rnn.bias_hh_l0_reverse', 'module.SequenceModeling.0.linear.weight', 'module.SequenceModeling.0.linear.bias', 'module.SequenceModeling.1.rnn.weight_ih_l0', 'module.SequenceModeling.1.rnn.weight_hh_l0', 'module.SequenceModeling.1.rnn.bias_ih_l0', 'module.SequenceModeling.1.rnn.bias_hh_l0', 'module.SequenceModeling.1.rnn.weight_ih_l0_reverse', 'module.SequenceModeling.1.rnn.weight_hh_l0_reverse', 'module.SequenceModeling.1.rnn.bias_ih_l0_reverse', 'module.SequenceModeling.1.rnn.bias_hh_l0_reverse', 'module.SequenceModeling.1.linear.weight', 'module.SequenceModeling.1.linear.bias', 'module.Prediction.attention_cell.i2h.weight', 'module.Prediction.attention_cell.h2h.weight', 'module.Prediction.attention_cell.h2h.bias', 'module.Prediction.attention_cell.score.weight', 'module.Prediction.attention_cell.rnn.weight_ih', 'module.Prediction.attention_cell.rnn.weight_hh', 'module.Prediction.attention_cell.rnn.bias_ih', 'module.Prediction.attention_cell.rnn.bias_hh', 'module.Prediction.generator.weight', 'module.Prediction.generator.bias']
-
     if saved_model:
         print('  - Loading model from:', saved_model)
         pretrained_dict = torch.load(saved_model)
-
-        # for k in del_keys:
-        #     if k in pretrained_dict.keys():
-        #         del pretrained_dict[k]
-
         model.load_state_dict(pretrained_dict, strict=False)
+
     else:
         print('  - Training from scratch (no pretrained weights provided)')
 
