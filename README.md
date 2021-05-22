@@ -1,5 +1,5 @@
-# Semantic-OCR (Work in progress)
-Multi modal approach to optical character recognition
+# Multimodal Scene Text Recognition (work in progress)
+Multimodal approach to optical character recognition
 
 ## Installation
 1) `git clone https://github.com/JoshuaPlacidi/semantic-ocr`
