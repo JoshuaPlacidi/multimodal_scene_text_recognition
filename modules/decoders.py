@@ -120,8 +120,9 @@ class TF_Decoder(nn.Module):
 
         self.num_classes = num_classes
 
-        #self.semantic_to_embed = nn.Linear(hidden_size+64, embed_dim)
-        #self.mlp = MLP(input_size=(128), hidden_size=256, num_classes=1, num_layers=4)
+        if config.PRE_DECODER_MLP:
+            self.relevant_mlp = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=1, num_layers=3)
+            self.combine_mlp = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=config.EMBED_DIM, num_layers=2)
         #self.to_hid = nn.Linear((512+64), 512)
 
     def _generate_square_subsequent_mask(self, sz):
@@ -139,7 +140,7 @@ class TF_Decoder(nn.Module):
 
         col_and_sem = torch.cat((col_seq, sem_seq), dim=3)
 
-        scores = self.mlp(col_and_sem)
+        scores = self.relevant_mlp(col_and_sem)
         scores = nn.functional.softmax(scores, dim=2)
         
         relevant_sem = sem_seq * scores
@@ -166,8 +167,10 @@ class TF_Decoder(nn.Module):
         # Map encoder_ouput dim to embed dim
         memory = self.hid_to_emb(encoder_output)
 
-        #overlap = self.get_relevant_semantic(memory, overlap, is_train)
-        #scene = self.get_relevant_semantic(memory, scene, is_train)
+        if config.PRE_DECODER_MLP:
+            relevant_semantic = self.get_relevant_semantic(memory, overlap, is_train)
+            combined = torch.cat((memory, relevant_semantic), dim=2)
+            memory = self.combine_mlp(combined)
 
         memory = memory.permute(1,0,2)
 
@@ -296,26 +299,36 @@ class TransformerDecoderLayer(nn.Module):
         super(TransformerDecoderLayer, self).__init__()
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        
-        self.multihead_overlap = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
 
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
-
 
         self.semantic_to_emb = nn.Linear(config.HIDDEN_DIM, config.EMBED_DIM)
 
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         self.norm3 = nn.LayerNorm(d_model)
-        self.norm4 = nn.LayerNorm(d_model)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
         self.dropout3 = nn.Dropout(dropout)
-        self.dropout4 = nn.Dropout(dropout)
 
         self.activation = F.relu
+
+        if config.MULTIHEAD_PRE_TARGET:
+            self.multihead_pre_target = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+            self.norm_pre_target = nn.LayerNorm(d_model)
+            self.dropout_pre_target = nn.Dropout(dropout)
+
+        if config.MULTIHEAD_PRE_MEMORY:
+            self.multihead_pre_memory = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+            self.norm_pre_memory = nn.LayerNorm(d_model)
+            self.dropout_pre_memory = nn.Dropout(dropout)
+
+        if config.MULTIHEAD_POST_MEMORY:
+            self.multihead_post_memory = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+            self.norm_post_memory = nn.LayerNorm(d_model)
+            self.dropout_post_memory = nn.Dropout(dropout)
 
     def __setstate__(self, state):
         if 'activation' not in state:
@@ -324,19 +337,30 @@ class TransformerDecoderLayer(nn.Module):
 
     def forward(self, tgt, memory, overlap, scene, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None,):
         
+        if config.MULTIHEAD_PRE_TARGET:
+            tgt2 = self.multihead_pre_target(tgt, overlap, overlap)[0]
+            tgt = tgt + self.dropout_pre_target(tgt2)
+            tgt = self.dropout_pre_target(tgt)            
+        
         tgt2 = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask,
                               key_padding_mask=tgt_key_padding_mask)[0]
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
+
+        if config.MULTIHEAD_PRE_MEMORY:
+            tgt2 = self.multihead_pre_memory(tgt, overlap, overlap)[0]
+            tgt = tgt + self.dropout_pre_memory(tgt2)
+            tgt = self.dropout_pre_memory(tgt) 
 
         tgt2 = self.multihead_attn(tgt, memory, memory, attn_mask=memory_mask,
                                    key_padding_mask=memory_key_padding_mask)[0]
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
 
-        # semantic_tgt = self.multihead_overlap(tgt, scene, scene)[0]
-        # tgt = tgt + self.dropout3(semantic_tgt)
-        # tgt = self.norm3(tgt)
+        if config.MULTIHEAD_POST_MEMORY:
+            tgt2 = self.multihead_post_memory(tgt, overlap, overlap)[0]
+            tgt = tgt + self.dropout_post_memory(tgt2)
+            tgt = self.dropout_post_memory(tgt) 
 
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
         tgt = tgt + self.dropout4(tgt2)

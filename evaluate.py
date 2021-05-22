@@ -32,7 +32,7 @@ import numpy as np
 import time
 
 
-saved_model = './results/models/scratch.pt'
+saved_model = None#'./results/models/scratch.pt'
 
 model = get_model(saved_model)
 model.eval()
@@ -57,7 +57,7 @@ total = 0
 ids = [17164, 156586, 14847, 27009, 105279, 103047, 101651, 123201, 77915, 21877, 155509, 159040, 43365, 168639, 38327]
 
 with torch.no_grad():
-    for image, label, scene, overlap in tqdm(val_data):
+    for image, label, overlap, scene in tqdm(val_data):
         # print(type(error_ids[0]), type(anno['id']))
         # break
         if True:#str(anno['id']) not in error_ids:

@@ -47,13 +47,20 @@ class Oscar_Bert(nn.Module):
         self.bert_to_hid = nn.Linear(768, 512)
 
     def forward(self, col_feats, overlap, scene, is_train):
-        seq_len = col_feats.shape[1]
-        segment_ids = torch.tensor(([0] * seq_len) + ([1] * overlap.shape[1]))
 
-        combined = torch.cat((col_feats, overlap), dim=1)
-        combined = self.hid_to_bert(combined)
+        if config.OSCAR_ENCODER:
+            seq_len = col_feats.shape[1]
+            segment_ids = torch.tensor(([0] * seq_len) + ([1] * overlap.shape[1]))
 
-        bert_output = self.model(inputs_embeds=combined, segment_ids=segment_ids)
+            combined = torch.cat((col_feats, overlap), dim=1)
+            input = self.hid_to_bert(combined)
+            
+        else:
+            segment_ids = None
+            input = self.hid_to_bert(col_feats)
+
+        bert_output = self.model(inputs_embeds=input, segment_ids=segment_ids)
+
         output = self.bert_to_hid(bert_output[0][:,:seq_len,:])
 
         return output
@@ -72,12 +79,13 @@ class TF_Encoder(nn.Module):
         self.layer_norm = nn.LayerNorm(config.HIDDEN_DIM)
         self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=6, norm=self.layer_norm)
 
-        # Multi-layer perceptron to calculate object relevance scores
-        self.overlap_mlp = MLP(input_size=(config.HIDDEN_DIM + config.EMBED_DIM), hidden_size=(config.HIDDEN_DIM + config.EMBED_DIM), num_classes=1, num_layers=3)
-        # self.scene_mlp = MLP(input_size=(config.HIDDEN_DIM + config.EMBED_DIM), hidden_size=(config.HIDDEN_DIM + config.EMBED_DIM), num_classes=1, num_layers=3)
+        if config.PRE_ENCODER_MLP:
 
-        # Multi-layer perceptron to map from (hid dim + emb dim) back to hid dim
-        self.combine_mlp = MLP(input_size=(config.HIDDEN_DIM + config.EMBED_DIM), hidden_size= (config.HIDDEN_DIM + config.EMBED_DIM), num_classes=config.HIDDEN_DIM, num_layers=3)
+            # Multi-layer perceptron to calculate object relevance scores
+            self.sem_relevence_mlp = MLP(input_size=(config.HIDDEN_DIM + config.EMBED_DIM), hidden_size=config.HIDDEN_DIM, num_classes=1, num_layers=3)
+
+            # Multi-layer perceptron to map from (hid dim + emb dim) back to hid dim
+            self.combine_mlp = MLP(input_size=(config.HIDDEN_DIM + config.EMBED_DIM), hidden_size=config.HIDDEN_DIM, num_classes=config.HIDDEN_DIM, num_layers=3)
 
     def get_relevant_semantic(self, feats, sem_vec, is_train):
         sem_seq_len = sem_vec.shape[1]  # Number of objects
@@ -89,7 +97,7 @@ class TF_Encoder(nn.Module):
 
         col_and_sem = torch.cat((col_seq, sem_seq), dim=3)
 
-        scores = self.mlp(col_and_sem)
+        scores = self.sem_relevence_mlp(col_and_sem)
         scores = nn.functional.softmax(scores, dim=2)
         
         relevant_sem = sem_seq * scores
@@ -113,8 +121,8 @@ class TF_Encoder(nn.Module):
 
 
     def forward(self, col_feats, overlap, scene, is_train=False):
-        if False: # set to True to use overlap information
-            rel_overlap = self.get_relevant_semantic(col_feats, overlap, overlap_mask, is_train=is_train)
+        if config.PRE_ENCODER_MLP:
+            rel_overlap = self.get_relevant_semantic(col_feats, overlap, is_train=is_train)
 
             combined = torch.cat((col_feats, rel_overlap), dim=2)
 

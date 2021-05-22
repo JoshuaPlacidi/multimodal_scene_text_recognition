@@ -29,7 +29,7 @@ import string
 import json
 import pandas as pd
 
-from coco_dataset import get_datasets, get_syth_datasets, get_cocotext_datasets
+from coco_dataset import get_syth_datasets, get_cocotext_datasets
 from model import get_model
 
 import time
@@ -37,7 +37,9 @@ import time
 device_ids = config.DEVICE_IDS
 device = torch.device(config.PRIMARY_DEVICE)
 
-train_ldr, val_ldr = get_syth_datasets()#get_cocotext_datasets()#get_datasets()#
+model = get_model(config.SAVED_MODEL)
+
+train_ldr, val_ldr = get_cocotext_datasets()#get_syth_datasets()#
 
 ## Model Config
 converter = AttnLabelConverter(config.CHARS)
@@ -45,10 +47,6 @@ converter = AttnLabelConverter(config.CHARS)
 batch_max_length = config.MAX_TEXT_LENGTH
 
 rgb = False
-
-model = get_model(config.SAVED_MODEL)
-
-
 
 def get_val_score(model, print_samples=False):
     print('  - Running Validation')
@@ -90,7 +88,7 @@ def get_val_score(model, print_samples=False):
             preds_max_prob, _ = preds_prob.max(dim=2)
 
             if print_samples:
-                if config.SEMANTIC_FORM == 'BERT': print('  - Overlap Objs:', tokenizer.decode(overlap_batch[0]))
+                #if config.SEMANTIC_FORM == 'BERT': print('  - Overlap Objs:', tokenizer.decode(overlap_batch[0]))
                 print('  - Ground truth:', text_batch[0])
                 print('  - Prediction:  ', preds_str[0], '\n\n')
 
@@ -151,7 +149,7 @@ for p in filter(lambda p: p.requires_grad, model.parameters()):
     params_num.append(np.prod(p.size()))
 
 optimizer = optim.AdamW(filtered_parameters, lr=0.0001)#, betas=(beta1, 0.999))
-scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=5, gamma=0.1)
+scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=10, gamma=0.1)
 
 df = pd.DataFrame(columns=['iter','cost_avg','val_acc','train_acc'])
 
@@ -236,7 +234,7 @@ for epoch in range(config.EPOCHS):
 
 
         iteration += 1
-        if iteration % 2000 == 0:
+        if iteration % 100 == 0:
             val_acc, val_loss, pred_dict = get_val_score(model, print_samples=True)
             print('  - iter ' + str(iteration) + ':', str(val_acc) +'% | Best:' + str(best_model) + '%')
 

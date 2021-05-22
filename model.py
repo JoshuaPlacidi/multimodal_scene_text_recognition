@@ -47,16 +47,16 @@ class Model(nn.Module):
 
 
         # # Semantic Vectors
-        if config.SEMANTIC_FORM == 'ZERO':
-            self.get_semantic_vectors = Zero()
-        elif config.SEMANTIC_FORM == 'RAND':
-            self.get_semantic_vectors = Random()
-        elif config.SEMANTIC_FORM == 'BERT':
-            self.get_semantic_vectors = Bert_Embedding()
-        elif config.SEMANTIC_FORM == 'FREQ':
-            self.get_semantic_vectors = Linear_Embedding()
-        else:
-            raise Exception("Model.py Semantic Vector Form Error: '" + config.SEMANTIC_VECTOR_FORM + "' not recognized")
+        # if config.SEMANTIC_SOURCE == 'zero':
+        #     self.get_semantic_vectors = Zero()
+        # elif config.SEMANTIC_SOURCE  == 'rand':
+        #     self.get_semantic_vectors = Random()
+        # elif config.SEMANTIC_EMBEDDING  == 'bert':
+        #     self.get_semantic_vectors = Bert_Embedding()
+        # elif config.SEMANTIC_EMBEDDING  == 'linear':
+        #     self.get_semantic_vectors = Linear_Embedding()
+        # else:
+        #     raise Exception("Model.py Semantic vector error: check config.SEMANTIC_SOURCE and config.SEMANTIC_EMBEDDING")
 
 
         # Encoder
@@ -73,15 +73,14 @@ class Model(nn.Module):
         
         # Decoder
         if config.DECODER == "LSTM":
-            self.Prediction = Attention(256, 256, num_classes)
+            self.decoder = Attention(256, 256, num_classes)
         elif config.DECODER == "Transformer":
-            self.Prediction = TF_Decoder(num_classes)
+            self.decoder = TF_Decoder(num_classes)
         elif config.DECODER == "Linear":
-            self.Prediction = Linear_Decoder(num_classes)
+            self.decoder = Linear_Decoder(num_classes)
         else:
             raise Exception("Model.py Decoder Error: '" + config.DECODER + "' not recognized")
 
-    #def forward(self, input, text, scene_semantic, overlap_semantic, is_train=True):
     def forward(self, input, text, overlap, scene, is_train=True):
 
         # Transformation
@@ -93,16 +92,16 @@ class Model(nn.Module):
         visual_features = visual_features.squeeze(3)
 
         # Semantic Vectors
-        overlap, scene = self.get_semantic_vectors(overlap, scene)
+        # overlap, scene = self.get_semantic_vectors(overlap, scene)
 
         # Encode
         if config.ENCODER == 'LSTM':
-            encoded_features = self.SequenceModeling(visual_features)
+            encoded_features = self.encoder(visual_features)
         else:
-            encoded_features = self.SequenceModeling(col_feats=visual_features, overlap=overlap, scene=scene, is_train=is_train)
+            encoded_features = self.encoder(col_feats=visual_features, overlap=overlap, scene=scene, is_train=is_train)
 
         # Decode
-        prediction = self.Prediction(encoded_features.contiguous(), text=text, overlap=overlap, scene=scene, is_train=is_train)
+        prediction = self.decoder(encoded_features.contiguous(), text=text, overlap=overlap, scene=scene, is_train=is_train)
 
         return prediction
 
@@ -118,7 +117,19 @@ def get_model(saved_model=None):
     if saved_model:
         print('  - Loading model from:', saved_model)
         pretrained_dict = torch.load(saved_model)
-        model.load_state_dict(pretrained_dict, strict=False)
+
+        new_dict = {}
+        for key, val in pretrained_dict.items():
+            if 'SequenceModeling' in key:
+                new_key = key.replace('SequenceModeling','encoder')
+                new_dict[new_key] = val
+            elif 'Prediction' in key:
+                new_key = key.replace('Prediction','decoder')
+                new_dict[new_key] = val
+            else:
+                new_dict[key] = val
+
+        model.load_state_dict(new_dict, strict=True)
 
     else:
         print('  - Training from scratch (no pretrained weights provided)')

@@ -24,18 +24,17 @@ class COCOText_Dataset(Dataset):
         self.to_tensor = transforms.ToTensor()
         self.resize = transforms.Resize((32,100))    
 
-        # Load object annotations
-
+        # Load annotations
         self.annotations = get_cocotext_annos(set)
                        
     def __len__(self):
         return len(self.annotations)
     
     def __getitem__(self, index):
+
+        # load sample
         anno = self.annotations[index]
         img, label, overlap, scene = get_sample(anno)
-
-        # Load annotation and image
         img = self.resize(img)
         img = self.to_tensor(img)
 
@@ -48,7 +47,6 @@ class COCOText_Validation_Dataset(Dataset):
         self.resize = transforms.Resize((32,100))    
 
         # Load object annotations
-
         self.annotations = get_cocotext_annos(set)
                        
     def __len__(self):
@@ -83,59 +81,6 @@ class COCOText_Validation_Dataset(Dataset):
 
         return img, label, overlap, scene
 
-def get_cocotext_annos(set):
-    # Open COCO-Text api
-    ct = coco_text.COCO_Text(config.COCO_TEXT_API_PATH)
-
-    # Open text annotations
-    with open(config.COCO_TEXT_API_PATH) as f:
-        text_annotations = json.load(f)    
-
-    with open('./annotations/features/object_tags.json') as object_annotations: # Load object features
-        object_annotations = json.load(object_annotations)
-
-    annotations = []
-
-    for _, anno in tqdm(text_annotations['anns'].items()):
-        if anno['legibility'] == 'legible': # If annotation is legibile
-
-            image = ct.loadImgs(ids=anno['image_id']) # Load annotation image data
-
-            if image[0]['set'] == set: # Check if in train or val set
-                
-                # Load and set annotations image path and its scene and overlap data
-                anno['img_path'] = config.IMAGE_PATH + image[0]['file_name']
-                objects = object_annotations[str(anno['image_id'])][config.SEMANTIC_SOURCE.lower()]
-                anno['overlap'] = get_overlap_vec(anno, objects)
-                anno['scene'] = get_scene_vec(objects)
-
-                # If set == check annotation is a model compatible string (legal characters, <25 length etc...), if val just check language is english
-                if set == 'train':
-                    if check_anno(anno['utf8_string']):
-                        annotations.append(anno)
-                else:
-                    if anno['language'] == 'english':
-                        annotations.append(anno)
-
-    return annotations
-
-def get_sample(anno):
-    label = anno['utf8_string']
-
-    img = Image.open(anno['img_path']).convert('L')
-    img = img.crop((anno['bbox'][0], anno['bbox'][1], anno['bbox'][0] + anno['bbox'][2], anno['bbox'][1] + anno['bbox'][3]))  
-    
-    padded_overlap = torch.zeros(15)
-    overlap = torch.LongTensor(anno['overlap'])
-    overlap_len = len(anno['overlap'])
-    padded_overlap[:overlap_len] = overlap
-
-    padded_scene = torch.zeros(52)
-    scene = torch.LongTensor(anno['scene'])
-    scene_len = len(anno['scene'])
-    padded_scene[:scene_len] = scene
-
-    return img, label, padded_overlap, padded_scene
 
 def get_val_data():
     #val_loader = torch.utils.data.DataLoader(COCOText_Validation_Dataset(), batch_size=config.BATCH_SIZE, shuffle=False,num_workers=0)
@@ -144,50 +89,11 @@ def get_val_data():
 def char_test():
     return COCOText_Dataset()
 
-
-
-
 def get_cocotext_datasets():
     print('  - Loading data from coco-text dataset')
-    # txt_annos_path = "F:/dev/Datasets/COCO/2014/COCO_Text_2014.json"
-    # feats_path = './comb_data/VG/area_resize.json'#'./comb_data/VG_area_resize_iou75.json' #new_comb.json  './comb_data/tfidf_area_resize.json'
-    # image_path = "F:/dev/Datasets/COCO/2014/images/train2014/"
 
     train_data = COCOText_Dataset(set='train')
     val_data = COCOText_Dataset(set='val')
-
-
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
-    val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
-
-    print('  - ' + str(len(train_loader)) + ' training batches')
-    print('  - ' + str(len(val_loader)) + ' val batches')
-
-    return train_loader, val_loader
-
-# takes a dictionary of type dict[object_label] = count and converts it to a sparse vector
-def get_object_vector(dict, length):
-
-    objs_vectors = []
-
-    for key, val in dict.items():
-        #for _ in range(val):
-        objs_vectors.append(int(key))
-
-    return objs_vectors
-    
-def check_anno(anno_text):
-    return anno_text == anno_text.strip().translate({ord(c): None for c in string.printable[-6:]+'/°-'})[0:25]#string.printable[-38:]+'°'})[0:25]
-
-def get_datasets():
-    print('  - Loading data from coco-text dataset')
-    # txt_annos_path = "F:/dev/Datasets/COCO/2014/COCO_Text_2014.json"
-    # feats_path = './comb_data/VG/area_resize.json'#'./comb_data/VG_area_resize_iou75.json' #new_comb.json  './comb_data/tfidf_area_resize.json'
-    # image_path = "F:/dev/Datasets/COCO/2014/images/train2014/"
-
-    train_data = Annotations_Dataset(set='train')
-    val_data = Annotations_Dataset(set='val')
-
 
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
@@ -216,30 +122,87 @@ def get_syth_datasets():
     print('  - ' + str(len(val_loader)) + ' val batches')
     return train_loader, val_loader
 
+def get_cocotext_annos(set):
+    # Open COCO-Text api
+    ct = coco_text.COCO_Text(config.COCO_TEXT_API_PATH)
+
+    # Open text annotations
+    with open(config.COCO_TEXT_API_PATH) as f:
+        text_annotations = json.load(f)    
+
+    with open('./annotations/features/object_tags.json') as object_annotations: # Load object features
+        object_annotations = json.load(object_annotations)
+
+    annotations = []
+
+    for _, anno in tqdm(text_annotations['anns'].items()):
+        if anno['legibility'] == 'legible': # If annotation is legibile
+
+            image = ct.loadImgs(ids=anno['image_id']) # Load annotation image data
+
+            if image[0]['set'] == set: # Check if in train or val set
+                
+                # Load and set annotations image path and its scene and overlap data
+                anno['img_path'] = config.IMAGE_PATH + image[0]['file_name']
+                objects = object_annotations[str(anno['image_id'])][config.SEMANTIC_SOURCE.lower()]
+
+                if config.SEMANTIC_SOURCE == 'coco' or config.SEMANTIC_SOURCE == 'vg' or config.SEMANTIC_SOURCE == 'vinvl':
+                    anno['overlap'] = get_overlap_vec(anno, objects)
+                    anno['scene'] = get_scene_vec(objects)
+                else:
+                    anno['overlap'] = None
+                    anno['scene'] = None
+
+                # If set == check annotation is a model compatible string (legal characters, <25 length etc...), if val just check language is english
+                if set == 'train':
+                    if check_anno(anno['utf8_string']):
+                        annotations.append(anno)
+                else:
+                    if anno['language'] == 'english':
+                        annotations.append(anno)
+
+    return annotations
+
+def get_sample(anno):
+    label = anno['utf8_string']
+
+    img = Image.open(anno['img_path']).convert('L')
+    img = img.crop((anno['bbox'][0], anno['bbox'][1], anno['bbox'][0] + anno['bbox'][2], anno['bbox'][1] + anno['bbox'][3]))  
+
+    padded_overlap = torch.zeros(15)
+    padded_scene = torch.zeros(52)
+
+    if anno['overlap']:
+        overlap = torch.LongTensor(anno['overlap'])
+        overlap_len = len(anno['overlap'])
+        padded_overlap[:overlap_len] = overlap
+
+    if anno['scene']:
+        scene = torch.LongTensor(anno['scene'])
+        scene_len = len(anno['scene'])
+        padded_scene[:scene_len] = scene
 
 
-
-def overlap(text, obj):
-    box_area = text['bbox'][2] * text['bbox'][3]
-    if box_area == 0: box_area = 1
-    scale_factor = text['area'] / box_area # mask area / bbox area
-    x_mid = (text['bbox'][2]/2) + text['bbox'][0] # width/2 + x
-    y_mid = (text['bbox'][3]/2) + text['bbox'][1] # height/2 + y
-    new_width = text['bbox'][2] * scale_factor # width * scale factor
-    new_height = text['bbox'][3] * scale_factor # height * scale factor
-    new_bbox = [x_mid-(new_width/2),y_mid-(new_height/2),new_width,new_height]
-
-    if((obj['bbox'][0] < new_bbox[0]) and (obj['bbox'][1] < new_bbox[1]) and ((obj['bbox'][0] + obj['bbox'][2]) > (new_bbox[0] + new_bbox[2])) and ((obj['bbox'][1] + obj['bbox'][3]) > (new_bbox[1] + new_bbox[3]))):
-        return True
-    else:
-        return False
+    return img, label, padded_overlap, padded_scene
+    
+def check_anno(anno_text):
+    return anno_text == anno_text.strip().translate({ord(c): None for c in string.printable[-6:]+'/°-'})[0:25]#string.printable[-38:]+'°'})[0:25]
 
 def get_overlap_vec(anno, objects):
     overlap_vec = []
     for obj in objects:
         obj_class = obj['class'] + 1
-        if obj_class not in overlap_vec and overlap(anno, obj):
-            overlap_vec.append(obj_class)
+
+        if obj_class not in overlap_vec:
+
+            if config.SEMANTIC_ASSIGNMENT == 'resize': # If assigning using resize method
+                if overlap_resize(anno, obj):
+                    overlap_vec.append(obj_class)
+
+            else:
+                if overlap_iou(anno, obj, float(config.SEMANTIC_ASSIGNMENT)): # If assigning using IoU method
+                    overlap_vec.append(obj_class)
+
     return overlap_vec
 
 def get_scene_vec(objects):
@@ -252,121 +215,7 @@ def get_scene_vec(objects):
         print('Scene error')
     return scene_vec
 
-
-
-class Annotations_Dataset(Dataset):
-    def __init__(self, set='train'):
-        
-        # Open COCO-Text api
-        ct = coco_text.COCO_Text(config.COCO_TEXT_API_PATH)
-
-        self.annotations = []
-        self.to_tensor = transforms.ToTensor()
-        self.resize = transforms.Resize((32,100))
-
-        # Open text annotations
-        with open(config.COCO_TEXT_API_PATH) as f:
-            text_annotations = json.load(f)        
-
-        # Load object annotations
-        self.classes = ['background']
-
-        if config.SEMANTIC_SOURCE == 'VG': # If using Visual Genome object data
-            with open('./annotations/features/vg_frequency.json') as object_annotations: # Load object features
-                self.object_annotations = json.load(object_annotations)
-
-            with open('./annotations/features/vg_classes.txt') as VG_labels: # Load visual genome class labels
-                for object in VG_labels.readlines():
-                    self.classes.append(object.split(',')[0].lower().strip().replace("'", ''))
-
-        elif config.SEMANTIC_SOURCE == 'COCO': # If using MS COCO object data
-            with open('./annotations/features/coco_frequency.json') as object_annotations:
-                self.object_annotations = json.load(object_annotations)
-
-            with open('./annotations/features/coco_classes.txt') as COCO_labels: # Load MS COCO class labels
-                for object in COCO_labels.readlines():
-                    self.classes.append(object.split(',')[0].lower().strip().replace("'", ''))
-
-        if config.SEMANTIC_FORM == 'FREQ':
-            self.overlap_vector_size = len(self.classes)
-            self.scene_vector_size = len(self.classes)
-
-        # Process text annotations
-        for _, anno in tqdm(text_annotations['anns'].items()):
-            if anno['legibility'] == 'legible': # If annotation is legibile
-
-                image = ct.loadImgs(ids=anno['image_id']) # Load annotation image data
-
-                if image[0]['set'] == set: # Check if in train or val set
-                    
-                    # Load and set annotations image path and its scene and overlap data
-                    anno['img_path'] = config.IMAGE_PATH + image[0]['file_name']
-                    anno['scene'] = self.object_annotations[str(anno['image_id'])]['scene']
-                    anno['overlap'] = self.object_annotations[str(anno['image_id'])]['overlap'][str(anno['id'])]
-
-                    # If set == check annotation is a model compatible string (legal characters, <25 length etc...), if val just check language is english
-                    if set == 'train':
-                        if check_anno(anno['utf8_string']):
-                            self.annotations.append(anno)
-                    else:
-                        if anno['language'] == 'english':
-                            self.annotations.append(anno)
-                       
-    def __len__(self):
-        return len(self.annotations)
-    
-    def __getitem__(self, index):
-
-        # Load annotation and image
-        anno = self.annotations[index]
-        img = Image.open(anno['img_path']).convert('L')
-        img = img.crop((anno['bbox'][0], anno['bbox'][1], anno['bbox'][0] + anno['bbox'][2], anno['bbox'][1] + anno['bbox'][3]))  
-        img = self.resize(img)
-        img = self.to_tensor(img)
-        
-        if config.SEMANTIC_FORM == 'BERT':
-            overlap = get_bert_tokens(anno, self.classes, 7, 20, 'overlap')
-            scene = get_bert_tokens(anno, self.classes, 7, 60, 'scene')
-
-        elif config.SEMANTIC_FORM == 'FREQ':
-            #print(anno['overlap'], anno['scene'])
-
-            overlap_padded = torch.zeros(10)
-            overlap_objs = torch.LongTensor(get_object_vector(anno['overlap'], self.overlap_vector_size))
-            if overlap_objs.shape[0] > 0:
-                overlap_objs = overlap_objs
-                overlap_padded[:overlap_objs.shape[0]] = overlap_objs
-
-            scene_padded = torch.zeros(20)
-            scene_objs = torch.LongTensor(get_object_vector(anno['scene'], self.scene_vector_size))
-            if scene_objs.shape[0] > 0:
-                scene_objs = scene_objs
-                scene_padded[:scene_objs.shape[0]] = scene_objs
-
-            
-            #print(overlap_padded.shape)
-
-        else:
-            overlap = torch.zeros(1)
-            scene = torch.zeros(1)
-
-        return img, anno['utf8_string'], scene_padded, overlap_padded
-
-def get_bert_tokens(anno, classes, max_length, sequence_pad, key, encode_frequency = False):
-    # tokens = []
-    # for key, val in anno[key].items():
-    #     for _ in range(val):
-    #         token = torch.tensor(tokenizer.encode(classes[int(key)], max_length=max_length, padding='max_length'))
-    #         tokens.append(token) 
-    # if not tokens: # If tokens is empty
-    #     token = torch.tensor(tokenizer.encode(classes[0], max_length=max_length, padding='max_length'))
-    #     tokens.append(token)
-
-    # for _ in range(sequence_pad-len(tokens)):
-    #     tokens.append(torch.zeros(max_length))
-
-    # tokens = torch.stack(tokens)
-
+def get_bert_tokens(anno, classes, max_length, sequence_pad, key, encode_frequency=False):
     sentence = ""
     for k, v in anno[key].items():
         if encode_frequency:
@@ -381,7 +230,40 @@ def get_bert_tokens(anno, classes, max_length, sequence_pad, key, encode_frequen
 
     return tokens
 
+def overlap_resize(text, obj):
+    box_area = text['bbox'][2] * text['bbox'][3]
+    if box_area == 0: box_area = 1
+    scale_factor = text['area'] / box_area # mask area / bbox area
+    x_mid = (text['bbox'][2]/2) + text['bbox'][0] # width/2 + x
+    y_mid = (text['bbox'][3]/2) + text['bbox'][1] # height/2 + y
+    new_width = text['bbox'][2] * scale_factor # width * scale factor
+    new_height = text['bbox'][3] * scale_factor # height * scale factor
+    new_bbox = [x_mid-(new_width/2),y_mid-(new_height/2),new_width,new_height]
 
+    if((obj['bbox'][0] < new_bbox[0]) and (obj['bbox'][1] < new_bbox[1]) and ((obj['bbox'][0] + obj['bbox'][2]) > (new_bbox[0] + new_bbox[2])) and ((obj['bbox'][1] + obj['bbox'][3]) > (new_bbox[1] + new_bbox[3]))):
+        return True
+    else:
+        return False
+
+from shapely.geometry import Polygon
+def overlap_iou(text, obj, threshold):
+    #def insertion_over_area(text, obj, percent):
+    text_poly = Polygon(get_all_coords(text['bbox']))
+    obj_poly = Polygon(get_all_coords(obj['bbox']))
+    insert = text_poly.intersection(obj_poly).area
+    if insert > 0:
+        insert_over_area = insert / (text['bbox'][2] * text['bbox'][3]) # insertion of text bb and obj bb / area of text bb
+        #print(insert_over_area)
+        if insert_over_area >= threshold: 
+            return True
+    return False
+
+def get_all_coords(coord_array):
+    x1 = coord_array[0]
+    y1 = coord_array[1]
+    x2 = coord_array[2]
+    y2 = coord_array[3]
+    return[[x1,y1],[x1+x2,y1],[x1+x2,y1+y2],[x1,y1+y2]]
 
 class LmdbDataset(Dataset):
 
