@@ -1,3 +1,4 @@
+from re import L
 import config
 
 import os
@@ -101,6 +102,7 @@ def get_val_score(model, print_samples=False):
                 pred_max_prob = pred_max_prob[:pred_EOS]
 
                 #print('"' + text + '"' + ' - "' + str(pred) + '"')
+
 
                 if text in pred_dict.keys():
                     d_total, d_correct, ls = pred_dict[text]
@@ -236,6 +238,7 @@ for epoch in range(config.EPOCHS):
         iteration += 1
         if iteration % 100 == 0:
             val_acc, val_loss, pred_dict = get_val_score(model, print_samples=True)
+            print(config.EXPERIMENT)
             print('  - iter ' + str(iteration) + ':', str(val_acc) +'% | Best:' + str(best_model) + '%')
 
             if val_acc > best_model:

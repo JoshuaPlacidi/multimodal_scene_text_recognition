@@ -46,20 +46,20 @@ class Oscar_Bert(nn.Module):
         self.hid_to_bert = nn.Linear(512, 768)
         self.bert_to_hid = nn.Linear(768, 512)
 
-    def forward(self, col_feats, overlap, scene, is_train):
+    def forward(self, col_feats, semantics, is_train):
+        seq_len = col_feats.shape[1]
 
         if config.OSCAR_ENCODER:
-            seq_len = col_feats.shape[1]
-            segment_ids = torch.tensor(([0] * seq_len) + ([1] * overlap.shape[1]))
+            segment_ids = torch.tensor(([0] * seq_len) + ([1] * semantics.shape[1]))
 
-            combined = torch.cat((col_feats, overlap), dim=1)
+            combined = torch.cat((col_feats, semantics), dim=1)
             input = self.hid_to_bert(combined)
             
         else:
             segment_ids = None
             input = self.hid_to_bert(col_feats)
 
-        bert_output = self.model(inputs_embeds=input, segment_ids=segment_ids)
+        bert_output = self.bert_model(inputs_embeds=input, token_type_ids=segment_ids)
 
         output = self.bert_to_hid(bert_output[0][:,:seq_len,:])
 
@@ -104,12 +104,12 @@ class TF_Encoder(nn.Module):
         relevant_sem = torch.sum(relevant_sem, dim=2)
 
         # Prints attention matrix
-        # if not is_train and str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
-        #     self.print_attention_scores(scores=scores, sem_seq_len=sem_seq_len)
+        if config.PRINT_ATTENTION_SCORES and not is_train and str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
+            self.print_attention_scores(scores=scores, sem_seq_len=sem_seq_len)
 
         return relevant_sem
 
-    def print_attention_scores(scores, sem_seq_len):
+    def print_attention_scores(self, scores, sem_seq_len):
         scores = scores[0].squeeze(-1).cpu().numpy().tolist()
         cols = [i for i in range(min(sem_seq_len,25))]
         df = pd.DataFrame(columns=cols)
@@ -120,13 +120,14 @@ class TF_Encoder(nn.Module):
         print(df)
 
 
-    def forward(self, col_feats, overlap, scene, is_train=False):
+    def forward(self, col_feats, semantics, is_train=False):
         if config.PRE_ENCODER_MLP:
-            rel_overlap = self.get_relevant_semantic(col_feats, overlap, is_train=is_train)
+            rel_semantics = self.get_relevant_semantic(col_feats, semantics, is_train=is_train)
 
-            combined = torch.cat((col_feats, rel_overlap), dim=2)
+            combined = torch.cat((col_feats, rel_semantics), dim=2)
+            rel_semantics = self.combine_mlp(combined)
 
-            input = self.combine_mlp(combined)
+            input = col_feats + rel_semantics
         else:
             input = col_feats
 

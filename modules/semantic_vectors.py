@@ -5,6 +5,8 @@ import torch.utils.data
 import torch.nn.functional as F
 torch.backends.cudnn.enabled = False
 
+import config
+
 
 class Linear_Embedding(nn.Module):
     '''
@@ -13,14 +15,33 @@ class Linear_Embedding(nn.Module):
     '''
     def __init__(self):
         super(Linear_Embedding, self).__init__()
-        self.embed = nn.Embedding(1489, config.EMBED_DIM)
+
+        if config.SEMANTIC_VECTOR == 'overlap' or config.SEMANTIC_VECTOR == 'scene':
+            self.embed = nn.Embedding(1489, config.EMBED_DIM)
+            
+        elif config.SEMANTIC_VECTOR == 'combined':
+            self.overlap_embed = nn.Embedding(1489, config.EMBED_DIM)
+            self.scene_embed = nn.Embedding(1489, config.EMBED_DIM)
+            self.combine = nn.Linear((config.EMBED_DIM*2), config.EMBED_DIM)
+
+        else:
+            raise Exception("Config: SEMANTIC_VECTOR invalid value: " + config.SEMANTIC_VECTOR)
+
 
     def forward(self, overlap, scene):
 
-        overlap = self.embed(overlap.long()).to(overlap.device)
-        scene = self.embed(scene.long()).to(overlap.device)
+        if config.SEMANTIC_VECTOR == 'overlap':
+            semantic = self.embed(overlap.long()).to(overlap.device)
 
-        return overlap, scene
+        elif config.SEMANTIC_VECTOR == 'scene':
+            semantic = self.embed(scene.long()).to(scene.device)
+
+        elif config.SEMANTIC_VECTOR == 'combined':
+            overlap_sem = self.embed(overlap.long()).to(overlap.device)
+            scene_sem = self.embed(scene.long()).to(scene.device)
+            semantic = self.combine(torch.cat((overlap_sem, scene_sem), dim=2))
+
+        return semantic
 
 
 # Using Distil Bert for memory efficiency

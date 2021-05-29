@@ -23,7 +23,7 @@ class Attention(nn.Module):
         one_hot = one_hot.scatter_(1, input_char, 1)
         return one_hot
 
-    def forward(self, encoder_output, text, overlap, scene, is_train):
+    def forward(self, encoder_output, text, semantics, is_train):
         """
         input:
             batch_H : contextual_feature H = hidden state of encoder. [batch_size x num_steps x contextual_feature_channels]
@@ -45,7 +45,7 @@ class Attention(nn.Module):
                 # hidden : decoder's hidden s_{t-1}, batch_H : encoder's hidden H, char_onehots : one-hot(y_{t-1})
                 #print('hidden[0]',hidden[0].shape,'hidden[1]',hidden[1].shape,' | batch_H', batch_H.shape)
                 #hidden[0], hidden[1] = init_hidd, init_hidd
-                hidden, alpha = self.attention_cell(hidden, encoder_output, char_onehots, overlap=overlap, scene=scene)
+                hidden, alpha = self.attention_cell(hidden, encoder_output, char_onehots, semantics=semantics)
                 output_hiddens[:, i, :] = hidden[0]  # LSTM hidden index (0: hidden, 1: Cell)
             probs = self.generator(output_hiddens)
 
@@ -55,7 +55,7 @@ class Attention(nn.Module):
 
             for i in range(num_steps):
                 char_onehots = self._char_to_onehot(targets, onehot_dim=self.num_classes)
-                hidden, alpha = self.attention_cell(hidden, encoder_output, char_onehots, overlap=overlap,scene=scene)
+                hidden, alpha = self.attention_cell(hidden, encoder_output, char_onehots, semantics=semantics)
                 probs_step = self.generator(hidden[0])
                 probs[:, i, :] = probs_step
                 _, next_input = probs_step.max(1)
@@ -76,7 +76,7 @@ class AttentionCell(nn.Module):
 
         #self.fc1 = nn.Linear(608, 352)
 
-    def forward(self, prev_hidden, batch_H, char_onehots, overlap, scene):
+    def forward(self, prev_hidden, batch_H, char_onehots, semantics):
         # [batch_size x num_encoder_step x num_channel] -> [batch_size x num_encoder_step x hidden_size]
         batch_H_proj = self.i2h(batch_H)
         prev_hidden_proj = self.h2h(prev_hidden[0]).unsqueeze(1)
@@ -147,12 +147,12 @@ class TF_Decoder(nn.Module):
         relevant_sem = torch.sum(relevant_sem, dim=2)
 
         # Prints attention matrix
-        # if not is_train and str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
-        #     self.print_attention_scores(scores=scores, sem_seq_len=sem_seq_len)
+        if config.PRINT_ATTENTION_SCORES and not is_train and str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
+            self.print_attention_scores(scores=scores, sem_seq_len=sem_seq_len)
 
         return relevant_sem
 
-    def print_attention_scores(scores, sem_seq_len):
+    def print_attention_scores(self, scores, sem_seq_len):
         scores = scores[0].squeeze(-1).cpu().numpy().tolist()
         cols = [i for i in range(min(sem_seq_len,25))]
         df = pd.DataFrame(columns=cols)
@@ -163,14 +163,14 @@ class TF_Decoder(nn.Module):
         print(df)
         
 
-    def forward(self, encoder_output, text, overlap, scene, is_train):
+    def forward(self, encoder_output, text, semantics, is_train):
         # Map encoder_ouput dim to embed dim
         memory = self.hid_to_emb(encoder_output)
 
         if config.PRE_DECODER_MLP:
-            relevant_semantic = self.get_relevant_semantic(memory, overlap, is_train)
+            relevant_semantic = self.get_relevant_semantic(memory, semantics, is_train)
             combined = torch.cat((memory, relevant_semantic), dim=2)
-            memory = self.combine_mlp(combined)
+            memory = memory + self.combine_mlp(combined)
 
         memory = memory.permute(1,0,2)
 
@@ -186,7 +186,7 @@ class TF_Decoder(nn.Module):
 
             # generate target mask and pass to decoder
             target_mask = self._generate_square_subsequent_mask(config.MAX_TEXT_LENGTH+1).to(encoder_output.device)
-            output = self.decoder(tgt=emb_targets, memory=memory, overlap=overlap, scene=scene, tgt_mask=target_mask)
+            output = self.decoder(tgt=emb_targets, memory=memory, semantics=semantics, tgt_mask=target_mask, is_train=is_train)
 
             # map embeding dim to number of classes
             output = self.emb_to_classes(output)
@@ -209,7 +209,7 @@ class TF_Decoder(nn.Module):
                 emb_targets = self.pos_encoder(emb_targets)
                 
                 # pass embed targets and encoder memory to decoder
-                t_output = self.decoder(tgt=emb_targets[:t+1], memory=memory, overlap=overlap, scene=scene, tgt_mask=target_mask)
+                t_output = self.decoder(tgt=emb_targets[:t+1], memory=memory, semantics=semantics, tgt_mask=target_mask, is_train=is_train)
 
                 # map embeding dim to number of classes
                 t_output = self.emb_to_classes(t_output)
@@ -240,7 +240,7 @@ class Linear_Decoder(nn.Module):
         self.linear_decoder.bias.data.zero_()
         self.linear_decoder.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, encoder_output, text, overlap, scene, is_train):
+    def forward(self, encoder_output, text, semantics, is_train):
         output = self.linear_decoder(encoder_output)
         return output
 
@@ -277,14 +277,15 @@ class TransformerDecoder(nn.Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, tgt, memory, overlap, scene, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
+    def forward(self, tgt, memory, semantics, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None, is_train=False):
             output = tgt
 
             for mod in self.layers:
-                output = mod(output, memory, overlap=overlap, scene=scene, 
+                output = mod(output, memory, semantics=semantics, 
                             tgt_mask=tgt_mask, memory_mask=memory_mask,
                             tgt_key_padding_mask=tgt_key_padding_mask,
-                            memory_key_padding_mask=memory_key_padding_mask)
+                            memory_key_padding_mask=memory_key_padding_mask,
+                            is_train=is_train)
 
             if self.norm is not None:
                 output = self.norm(output)
@@ -320,25 +321,70 @@ class TransformerDecoderLayer(nn.Module):
             self.norm_pre_target = nn.LayerNorm(d_model)
             self.dropout_pre_target = nn.Dropout(dropout)
 
+            self.relevant_mlp_pre_target = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=1, num_layers=3)
+            #self.combine_mlp_pre_target = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=config.EMBED_DIM, num_layers=2)
+
         if config.MULTIHEAD_PRE_MEMORY:
             self.multihead_pre_memory = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
             self.norm_pre_memory = nn.LayerNorm(d_model)
             self.dropout_pre_memory = nn.Dropout(dropout)
+
+            self.relevant_mlp_pre_memory = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=1, num_layers=3)
+            #self.combine_mlp_pre_memory = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=config.EMBED_DIM, num_layers=2)
 
         if config.MULTIHEAD_POST_MEMORY:
             self.multihead_post_memory = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
             self.norm_post_memory = nn.LayerNorm(d_model)
             self.dropout_post_memory = nn.Dropout(dropout)
 
+            self.relevant_mlp_post_memory = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=1, num_layers=3)
+            #self.combine_mlp_post_memory = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=config.EMBED_DIM, num_layers=2)
+            
+
     def __setstate__(self, state):
         if 'activation' not in state:
             state['activation'] = F.relu
         super(TransformerDecoderLayer, self).__setstate__(state)
 
-    def forward(self, tgt, memory, overlap, scene, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None,):
+    def get_relevant_semantic(self, feats, sem_vec, relevant_mlp, is_train=True):
+        # print(feats.shape, sem_vec.shape)
+        sem_seq_len = sem_vec.shape[1]  # Number of objects
+        col_seq_len = feats.shape[1]    # Number of visual cols
+
+        sem_seq = sem_vec.unsqueeze(1).repeat(1, col_seq_len, 1, 1)
+        col_seq = feats.unsqueeze(2).repeat(1, 1, sem_seq_len, 1)
+        # Reshape both tensors to [batch, col_seq_len, sem_seq_len, feats]
+
+        col_and_sem = torch.cat((col_seq, sem_seq), dim=3)
+
+        scores = relevant_mlp(col_and_sem)
+        scores = nn.functional.softmax(scores, dim=2)
+        
+        relevant_sem = sem_seq * scores
+        relevant_sem = torch.sum(relevant_sem, dim=2)
+
+        # if config.PRINT_ATTENTION_SCORES and not is_train and str(sem_vec.device)[-1] == config.PRIMARY_DEVICE[-1]:
+        #     self.print_attention_scores(scores=scores, sem_seq_len=sem_seq_len)
+
+        return relevant_sem
+
+    # def print_attention_scores(self, scores, sem_seq_len):
+    #     scores = scores[0].squeeze(-1).cpu().numpy().tolist()
+    #     print(scores)
+    #     cols = [i for i in range(min(sem_seq_len,25))]
+    #     df = pd.DataFrame(columns=cols)
+
+    #     for i in range(len(scores)):
+    #         obj_scores = [(round(j*100,2)) for j in scores[i]][:min(sem_seq_len,25)]
+    #         df = df.append(pd.Series(obj_scores, index=cols), ignore_index=True)
+    #     print(df)
+
+    def forward(self, tgt, memory, semantics, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None, is_train=False):
         
         if config.MULTIHEAD_PRE_TARGET:
-            tgt2 = self.multihead_pre_target(tgt, overlap, overlap)[0]
+
+            semantics = self.get_relevant_semantic(tgt.permute(1,0,2), semantics, self.relevant_mlp_pre_target, is_train)
+            tgt2 = self.multihead_pre_target(tgt, semantics, semantics)[0]
             tgt = tgt + self.dropout_pre_target(tgt2)
             tgt = self.dropout_pre_target(tgt)            
         
@@ -348,7 +394,8 @@ class TransformerDecoderLayer(nn.Module):
         tgt = self.norm1(tgt)
 
         if config.MULTIHEAD_PRE_MEMORY:
-            tgt2 = self.multihead_pre_memory(tgt, overlap, overlap)[0]
+            semantics = self.get_relevant_semantic(tgt.permute(1,0,2), semantics, self.relevant_mlp_pre_memory, is_train)
+            tgt2 = self.multihead_pre_memory(tgt, semantics, semantics)[0]
             tgt = tgt + self.dropout_pre_memory(tgt2)
             tgt = self.dropout_pre_memory(tgt) 
 
@@ -358,13 +405,14 @@ class TransformerDecoderLayer(nn.Module):
         tgt = self.norm2(tgt)
 
         if config.MULTIHEAD_POST_MEMORY:
-            tgt2 = self.multihead_post_memory(tgt, overlap, overlap)[0]
+            semantics = self.get_relevant_semantic(tgt.permute(1,0,2), semantics, self.relevant_mlp_post_memory, is_train)
+            tgt2 = self.multihead_post_memory(tgt, semantics, semantics)[0]
             tgt = tgt + self.dropout_post_memory(tgt2)
             tgt = self.dropout_post_memory(tgt) 
 
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
-        tgt = tgt + self.dropout4(tgt2)
-        tgt = self.norm4(tgt)
+        tgt = tgt + self.dropout3(tgt2)
+        tgt = self.norm3(tgt)
         return tgt
 
 

@@ -1,30 +1,30 @@
 import string
 
 # Set cuda devices to use
-DEVICE_IDS=[3,4]
+DEVICE_IDS=[0,1]
 PRIMARY_DEVICE = 'cuda:' + str(DEVICE_IDS[0])
 
 '''
  Experiment paramenters
 '''
 # Name of experiement (used to save files)
-EXPERIMENT = 'cocotext_finetune_from_scratch'#e6d1_emb64_SOS_TEST1'#'TEARS_2layers_lr0.0001_TFdecoder'
+EXPERIMENT = 'oscar_encoder_from_scratch'
 
 # Pretained model to use
-SAVED_MODEL = './results/models/scratch.pt'#base.pth'#./results/models/SCRATCH_SYTH_e_3.pt'#'base.pth'#
+SAVED_MODEL = None#'./results/models/scratch.pt'#'./results/models/pre_encoder_mlp_overlap_vinvl_resize_linear.pt'#
 
 RANDOM_SEED = 999
 BATCH_SIZE = 192
-EPOCHS = 20
+EPOCHS = 4
 MAX_TEXT_LENGTH = 25
 CHARS = string.printable[:-6]
-MODEL_SAVE_THRESHOLD = 50 # Once val accuraccy % passes this threshold highest accuraccy models are saved to ./results/models
+MODEL_SAVE_THRESHOLD = 0 # Once val accuraccy % passes this threshold highest accuraccy models are saved to ./results/models
 
 
 '''
  Model design
 '''
-ENCODER = 'Transformer' # LSTM  | Transformer   | Oscar
+ENCODER = 'Oscar' # LSTM  | Transformer   | Oscar
 DECODER = 'Transformer' # LSTM  | Transformer   | Linear
 
 # Dimensions
@@ -32,6 +32,7 @@ EMBED_DIM = 256
 HIDDEN_DIM = 512
 
 # Semantic vector processing
+SEMANTIC_VECTOR = 'scene'     # overlap | scene | combined
 SEMANTIC_SOURCE = 'vinvl'       # coco  | vg    | vinvl | zero  | rand
 SEMANTIC_ASSIGNMENT = 'resize'  # .25   | .50   | .75   | resize (if .25/.50/.75 then using iou assignment)
 SEMANTIC_EMBEDDING = 'linear'   # bert  | linear
@@ -39,12 +40,13 @@ SEMANTIC_EMBEDDING = 'linear'   # bert  | linear
 '''
  Fusion Strategies
 '''
+PRINT_ATTENTION_SCORES = False
 # Encoder
 PRE_ENCODER_MLP = False
 OSCAR_ENCODER = False
 # Decoder
 PRE_DECODER_MLP = False
-CLS_DECODER_INIT = False        # NOT
+CLS_DECODER_INIT = False       # NOT implemented
 MULTIHEAD_PRE_TARGET = False
 MULTIHEAD_PRE_MEMORY = False
 MULTIHEAD_POST_MEMORY = False

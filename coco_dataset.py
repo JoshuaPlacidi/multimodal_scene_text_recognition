@@ -14,7 +14,7 @@ import config
 import lmdb
 import six
 import re
-
+import time
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
@@ -51,25 +51,6 @@ class COCOText_Validation_Dataset(Dataset):
                        
     def __len__(self):
         return len(self.annotations)
-    
-    def __getitem__(self, index):
-
-        # Load annotation and image
-        anno = self.annotations[index]
-        img = Image.open(anno['img_path']).convert('L')
-        img = img.crop((anno['bbox'][0], anno['bbox'][1], anno['bbox'][0] + anno['bbox'][2], anno['bbox'][1] + anno['bbox'][3]))  
-        img = self.resize(img)
-        img = self.to_tensor(img)
-
-        padded_overlap = torch.zeros(16)
-        overlap = torch.LongTensor(anno['overlap'])
-        padded_overlap[:len(anno['overlap'])] = overlap
-
-        padded_scene = torch.zeros(100)
-        scene = torch.LongTensor(anno['scene'])
-        padded_scene[:len(anno['scene'])] = scene
-
-        return anno, img, anno['utf8_string'], padded_scene, padded_overlap
 
     def __getitem__(self, index):
         anno = self.annotations[index]
@@ -79,12 +60,15 @@ class COCOText_Validation_Dataset(Dataset):
         img = self.resize(img)
         img = self.to_tensor(img)
 
-        return img, label, overlap, scene
+        return anno['id'], img, label, overlap, scene
 
 
-def get_val_data():
-    #val_loader = torch.utils.data.DataLoader(COCOText_Validation_Dataset(), batch_size=config.BATCH_SIZE, shuffle=False,num_workers=0)
-    return COCOText_Validation_Dataset()
+def get_cocotext_single_image_data(return_loader=True):
+    if return_loader:
+        val_loader = torch.utils.data.DataLoader(COCOText_Validation_Dataset(), batch_size=config.BATCH_SIZE, shuffle=False,num_workers=0)
+        return val_loader
+    else:
+        return COCOText_Validation_Dataset()
 
 def char_test():
     return COCOText_Dataset()
@@ -103,7 +87,7 @@ def get_cocotext_datasets():
 
     return train_loader, val_loader
 
-def get_syth_datasets():
+def get_synth_datasets():
     print('  - Loading data from sythetic datasets')
 
     mj_train_data = LmdbDataset(config.DEEP_TEXT_DATASET_PATH + 'training/MJ/MJ_train/')

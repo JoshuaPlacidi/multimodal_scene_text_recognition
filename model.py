@@ -6,6 +6,7 @@ import torch.nn.functional as F
 torch.backends.cudnn.enabled = False
 
 from utils import AttnLabelConverter
+import time
 
 from modules.transformation import TPS_SpatialTransformerNetwork
 from modules.feature_extraction import ResNet_FeatureExtractor
@@ -45,18 +46,17 @@ class Model(nn.Module):
         self.FeatureExtraction_output = output_channel  # int(imgH/16-1) * 512
         self.AdaptiveAvgPool = nn.AdaptiveAvgPool2d((None, 1))  # Transform final (imgH/16-1) -> 1
 
-
-        # # Semantic Vectors
-        # if config.SEMANTIC_SOURCE == 'zero':
-        #     self.get_semantic_vectors = Zero()
-        # elif config.SEMANTIC_SOURCE  == 'rand':
-        #     self.get_semantic_vectors = Random()
-        # elif config.SEMANTIC_EMBEDDING  == 'bert':
-        #     self.get_semantic_vectors = Bert_Embedding()
-        # elif config.SEMANTIC_EMBEDDING  == 'linear':
-        #     self.get_semantic_vectors = Linear_Embedding()
-        # else:
-        #     raise Exception("Model.py Semantic vector error: check config.SEMANTIC_SOURCE and config.SEMANTIC_EMBEDDING")
+        # Semantic Vectors
+        if config.SEMANTIC_SOURCE == 'zero':
+            self.get_semantic_vectors = Zero()
+        elif config.SEMANTIC_SOURCE  == 'rand':
+            self.get_semantic_vectors = Random()
+        elif config.SEMANTIC_EMBEDDING  == 'bert':
+            self.get_semantic_vectors = Bert_Embedding()
+        elif config.SEMANTIC_EMBEDDING  == 'linear':
+            self.get_semantic_vectors = Linear_Embedding()
+        else:
+            raise Exception("Model.py Semantic vector error: check config.SEMANTIC_SOURCE and config.SEMANTIC_EMBEDDING")
 
 
         # Encoder
@@ -70,7 +70,7 @@ class Model(nn.Module):
             self.encoder = Oscar_Bert()
         else:
             raise Exception("Model.py Encoder Error: '" + config.ENCODER + "' not recognized")
-        
+
         # Decoder
         if config.DECODER == "LSTM":
             self.decoder = Attention(256, 256, num_classes)
@@ -80,6 +80,7 @@ class Model(nn.Module):
             self.decoder = Linear_Decoder(num_classes)
         else:
             raise Exception("Model.py Decoder Error: '" + config.DECODER + "' not recognized")
+
 
     def forward(self, input, text, overlap, scene, is_train=True):
 
@@ -92,16 +93,16 @@ class Model(nn.Module):
         visual_features = visual_features.squeeze(3)
 
         # Semantic Vectors
-        # overlap, scene = self.get_semantic_vectors(overlap, scene)
+        semantics = self.get_semantic_vectors(overlap, scene)
 
         # Encode
         if config.ENCODER == 'LSTM':
             encoded_features = self.encoder(visual_features)
         else:
-            encoded_features = self.encoder(col_feats=visual_features, overlap=overlap, scene=scene, is_train=is_train)
+            encoded_features = self.encoder(col_feats=visual_features, semantics=semantics, is_train=is_train)
 
         # Decode
-        prediction = self.decoder(encoded_features.contiguous(), text=text, overlap=overlap, scene=scene, is_train=is_train)
+        prediction = self.decoder(encoded_features.contiguous(), text=text, semantics=semantics, is_train=is_train)
 
         return prediction
 
@@ -116,20 +117,9 @@ def get_model(saved_model=None):
 
     if saved_model:
         print('  - Loading model from:', saved_model)
-        pretrained_dict = torch.load(saved_model)
+        pretrained_dict = torch.load(saved_model, map_location=lambda storage, loc: storage)
 
-        new_dict = {}
-        for key, val in pretrained_dict.items():
-            if 'SequenceModeling' in key:
-                new_key = key.replace('SequenceModeling','encoder')
-                new_dict[new_key] = val
-            elif 'Prediction' in key:
-                new_key = key.replace('Prediction','decoder')
-                new_dict[new_key] = val
-            else:
-                new_dict[key] = val
-
-        model.load_state_dict(new_dict, strict=True)
+        model.load_state_dict(pretrained_dict, strict=False)
 
     else:
         print('  - Training from scratch (no pretrained weights provided)')
