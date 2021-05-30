@@ -8,7 +8,6 @@ __pycache__/*
 modules/__pycache__/*
 results/*
 !results/init.py
-results/models/*
 !results/models/init.py
 .vscode/*
 test_files/*
