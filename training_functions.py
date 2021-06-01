@@ -79,12 +79,12 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
             scene = scene.to(config.PRIMARY_DEVICE)
 
             # Encode text (ground truth) to indicies
-            text, _ = converter.encode(text, batch_max_length=config.MAX_TEXT_LENGTH)
+            encoded_text, _ = converter.encode(text, batch_max_length=config.MAX_TEXT_LENGTH)
 
             # Pass samples through model
-            preds = model(image, text[:, :-1], overlap, scene)
+            preds = model(image, encoded_text[:, :-1], overlap, scene)
 
-            target = text[:, 1:]  # without [GO] Symbol
+            target = encoded_text[:, 1:]  # without [GO] Symbol
             cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
             model.zero_grad()
             cost.backward()
@@ -99,11 +99,10 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
             preds_str = converter.decode(preds_index, length_for_pred)
 
             # Calculate training accuracy
-            for text, pred in zip(text, preds_str):
-
-                pred_EOS = pred.find('[s]')
-                pred = pred[:pred_EOS]
-
+            # print(zip(text, preds_str))
+            for text, preds in zip(text, preds_str):
+                pred_EOS = preds.find('[s]')
+                pred = preds[:pred_EOS]
                 if(text == str(pred)):
                     train_correct += 1
 
@@ -184,5 +183,63 @@ def validate(model, validation_dataloader, print_samples=False):
 
     return round(correct*100/total,5)
 
-def evaluate():
-    pass
+def evaluate(model, print_sem=False):
+    print('--- Running Evaluation')
+    model.eval()
+
+    from utils import AttnLabelConverter
+    converter = AttnLabelConverter(config.CHARS)
+
+    correct = 0
+    total = 0
+
+    val_data = get_dataset('cocotext_single_image_val')
+    print('  -', len(val_data), 'images loaded')
+
+    with open('./annotations/features/' + config.SEMANTIC_SOURCE.lower() + '_classes.txt') as f:
+        obj_class_labels = f.read().splitlines()
+
+    with open('./results/base_error_ids.txt') as f:
+        base_errors_ids = f.read().splitlines()
+
+    with torch.no_grad():
+        for anno, image, label, overlap, scene in tqdm(val_data):
+            if str(anno) in base_errors_ids:
+                text_in = torch.LongTensor(config.BATCH_SIZE, config.MAX_TEXT_LENGTH + 1).fill_(0).to(config.PRIMARY_DEVICE)
+
+                if print_sem:
+                    if config.SEMANTIC_SOURCE.lower() == 'overlap':
+                        overlap_list = list(overlap.numpy())
+                        tags = [obj_class_labels[int(i)-1] for i in overlap_list if i != 0]
+                    elif config.SEMANTIC_SOURCE.lower() == 'scene':
+                        scene_list = list(scene.numpy())
+                        tags = [obj_class_labels[int(i)-1] for i in scene_list if i != 0]
+                    else:
+                        raise Exception('training_functions.py Evaluation error', config.SEMANTIC_SOURCE, 'not recognised')
+
+                    print(tags)
+                
+
+                # Add batch dimension
+                image = image.unsqueeze(0).to(config.PRIMARY_DEVICE)
+                overlap = overlap.unsqueeze(0).to(config.PRIMARY_DEVICE)
+                scene = scene.unsqueeze(0).to(config.PRIMARY_DEVICE)
+
+                # Pass through model
+                pred = model(input=image, text=text_in, overlap=overlap, scene=scene, is_train=False)
+
+                length_for_pred = torch.IntTensor([config.MAX_TEXT_LENGTH]).to(config.PRIMARY_DEVICE)
+
+                _, pred_index = pred.max(2)
+                pred_str = converter.decode(pred_index, length_for_pred)[0]
+                pred_str = pred_str[:pred_str.find('[s]')]
+
+                
+                if label == pred_str:
+                    correct += 1
+                    print(label, pred_str)
+                    print(round(correct*100/total,3))
+                total += 1
+
+    print('Correct:', correct)
+    print('Total:  ', total)
