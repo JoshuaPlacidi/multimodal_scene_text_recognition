@@ -30,4 +30,4 @@ print('  - Devices:', config.DEVICE_IDS)
 # Train
 model = get_model(config.SAVED_MODEL)
 
-train(model=model, dataset='cocotext', validation_steps=100, iteration_limit=None)
+train(model=model, dataset='textocr', validation_steps=100, iteration_limit=None)

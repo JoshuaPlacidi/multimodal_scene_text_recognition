@@ -8,7 +8,7 @@ PRIMARY_DEVICE = 'cuda:' + str(DEVICE_IDS[0])
  Experiment paramenters
 '''
 # Name of experiement (used to save files)
-EXPERIMENT = 'bert_encoder'
+EXPERIMENT = 'TextOCR_basicTF_from_scratch'
 
 # Pretained model to use
 SAVED_MODEL = './results/models/no_pretrained_oscar_encoder_from_scratch.pt'#'./results/models/scratch.pt'#
@@ -24,7 +24,7 @@ MODEL_SAVE_THRESHOLD = 0 # Once val accuraccy % passes this threshold highest ac
 '''
  Model design
 '''
-ENCODER = 'Oscar' # LSTM  | Transformer   | Oscar
+ENCODER = 'Transformer' # LSTM  | Transformer   | Oscar
 DECODER = 'Transformer' # LSTM  | Transformer   | Linear
 
 # Dimensions
@@ -63,20 +63,3 @@ IMAGE_PATH = "/data_ssd1/jplacidi/coco_data/images/train2014/"
 DEEP_TEXT_DATASET_PATH = "/data_ssd1/jplacidi/deep_text_datasets/"
 # TextOCR path to folder containing train, val and test .jsons
 TEXTOCR_PATH = "/data_ssd1/jplacidi/TextOCR/"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

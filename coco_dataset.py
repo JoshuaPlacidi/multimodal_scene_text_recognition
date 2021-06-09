@@ -25,7 +25,7 @@ class TextOCR_Dataset(Dataset):
         self.resize = transforms.Resize((32,100))    
 
         # Load annotations
-        self.annotations = get_cocotext_annos(set)
+        self.annotations = get_textocr_annos(set)
                        
     def __len__(self):
         return len(self.annotations)
@@ -39,6 +39,20 @@ class TextOCR_Dataset(Dataset):
         img = self.to_tensor(img)
 
         return img, label, overlap, scene
+
+def get_textocr_datasets():
+    print('  - Loading data from TextOCR dataset')
+
+    train_data = TextOCR_Dataset(set='train')
+    val_data = TextOCR_Dataset(set='val')
+
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
+    val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.BATCH_SIZE, shuffle=True,num_workers=0)
+
+    print('  - ' + str(len(train_loader)) + ' training batches')
+    print('  - ' + str(len(val_loader)) + ' val batches')
+
+    return train_loader, val_loader
 
 class COCOText_Dataset(Dataset):
     def __init__(self, set='train'):

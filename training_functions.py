@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from utils import AttnLabelConverter, Averager
 
-from coco_dataset import get_synth_datasets, get_cocotext_datasets, get_cocotext_single_image_data
+from coco_dataset import get_synth_datasets, get_cocotext_datasets, get_cocotext_single_image_data, get_textocr_datasets
 
 def get_dataset(dataset='cocotext'):
     if dataset == 'cocotext':
@@ -18,6 +18,9 @@ def get_dataset(dataset='cocotext'):
         return train_dataloader, val_dataloader
     elif dataset == 'synth':
         train_dataloader, val_dataloader = get_synth_datasets()
+        return train_dataloader, val_dataloader
+    elif dataset == 'textocr':
+        train_dataloader, val_dataloader = get_textocr_datasets()
         return train_dataloader, val_dataloader
     elif dataset == 'cocotext_single_image_val':
         val_data = get_cocotext_single_image_data(return_loader=False)
