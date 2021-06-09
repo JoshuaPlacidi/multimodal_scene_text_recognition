@@ -94,7 +94,7 @@ class Model(nn.Module):
 
         # Semantic Vectors
         semantics = self.get_semantic_vectors(overlap, scene)
-
+        
         # Encode
         if config.ENCODER == 'LSTM':
             encoded_features = self.encoder(visual_features)
@@ -118,6 +118,7 @@ def get_model(saved_model=None):
     if saved_model:
         print('  - Loading model from:', saved_model)
         pretrained_dict = torch.load(saved_model, map_location=lambda storage, loc: storage)
+        del pretrained_dict['module.get_semantic_vectors.embed.weight']
 
         model.load_state_dict(pretrained_dict, strict=False)
 

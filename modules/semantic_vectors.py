@@ -17,11 +17,11 @@ class Linear_Embedding(nn.Module):
         super(Linear_Embedding, self).__init__()
 
         if config.SEMANTIC_VECTOR == 'overlap' or config.SEMANTIC_VECTOR == 'scene':
-            self.embed = nn.Embedding(1489, config.EMBED_DIM)
+            self.embed = nn.Embedding(2000, config.EMBED_DIM)
             
         elif config.SEMANTIC_VECTOR == 'combined':
-            self.overlap_embed = nn.Embedding(1489, config.EMBED_DIM)
-            self.scene_embed = nn.Embedding(1489, config.EMBED_DIM)
+            self.overlap_embed = nn.Embedding(2000, config.EMBED_DIM)
+            self.scene_embed = nn.Embedding(2000, config.EMBED_DIM)
             self.combine = nn.Linear((config.EMBED_DIM*2), config.EMBED_DIM)
 
         else:

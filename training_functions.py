@@ -7,6 +7,7 @@ import torch
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+import time
 
 from utils import AttnLabelConverter, Averager
 
@@ -55,7 +56,7 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
 
     print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(params_num))
 
-    val_acc = validate(model, validation_dataloader, print_samples=True)
+    val_acc = 0#validate(model, validation_dataloader, print_samples=True)
 
 
     df = df.append({'iter': '0', 'cost_avg':'n/a', 'val_acc':val_acc, 'train_acc':'n/a'}, ignore_index=True)
@@ -75,7 +76,6 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
 
 
         for image, text, overlap, scene in tqdm(train_dataloader):
-
             # Put samples on devices
             image = image.to(config.PRIMARY_DEVICE)
             overlap = overlap.to(config.PRIMARY_DEVICE)   

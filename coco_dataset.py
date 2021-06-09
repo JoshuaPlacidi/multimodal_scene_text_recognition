@@ -144,7 +144,7 @@ def get_synth_datasets():
 
 def get_cocotext_annos(set):
     # Open COCO-Text api
-    ct = coco_text.COCO_Text(config.COCO_TEXT_API_PATH)
+    ct = coco_text.COCO_Text(config.COCOTEXT_API_PATH)
 
     # Open text annotations
     with open(config.COCO_TEXT_API_PATH) as f:
@@ -163,7 +163,7 @@ def get_cocotext_annos(set):
             if image[0]['set'] == set: # Check if in train or val set
                 
                 # Load and set annotations image path and its scene and overlap data
-                anno['img_path'] = config.IMAGE_PATH + image[0]['file_name']
+                anno['img_path'] = config.COCOTEXT_IMAGE_PATH + image[0]['file_name']
                 objects = object_annotations[str(anno['image_id'])][config.SEMANTIC_SOURCE.lower()]
 
                 if config.SEMANTIC_SOURCE == 'coco' or config.SEMANTIC_SOURCE == 'vg' or config.SEMANTIC_SOURCE == 'vinvl':
@@ -185,11 +185,11 @@ def get_cocotext_annos(set):
 
 def get_textocr_annos(set):
     if set == 'train':
-        anno_path = config.TEXTOCR_PATH + "TextOCR_train.json"
+        anno_path = config.TEXTOCR_ANNO_PATH + "TextOCR_train.json"
     elif set == 'val':
-        anno_path = config.TEXTOCR_PATH + "TextOCR_val.json"
+        anno_path = config.TEXTOCR_ANNO_PATH + "TextOCR_val.json"
     elif set == 'test':
-        anno_path = config.TEXTOCR_PATH + "TextOCR_test.json"
+        anno_path = config.TEXTOCR_ANNO_PATH + "TextOCR_test.json"
     else:
         raise Exception("TextOCR set:", set, "not recognized")
 
@@ -203,26 +203,27 @@ def get_textocr_annos(set):
     annotations = []
 
     for _, anno in tqdm(text_annotations['anns'].items()):
-        if anno['legibility'] == 'legible': # If annotation is legibile
+        if anno['utf8_string'] != '.': # If annotation is legibile
 
             image = text_annotations["imgs"][anno["image_id"]] # Load annotation image data
 
             if image['set'] == set: # Check if in train or val set
                 
                 # Load and set annotations image path and its scene and overlap data
-                anno['img_path'] = config.IMAGE_PATH + image['file_name']
-                objects = object_annotations[str(anno['image_id'])]["vinvl"]
+                anno['img_path'] = config.TEXTOCR_IMAGE_PATH + image['file_name']
 
-                anno['overlap'] = get_overlap_vec(anno, objects)
-                anno['scene'] = get_scene_vec(objects)
+                if anno["image_id"] in object_annotations.keys():
+                    objects = object_annotations[str(anno['image_id'])]["vinvl"]
 
-                # If set == check annotation is a model compatible string (legal characters, <25 length etc...), if val just check language is english
-                if set == 'train':
-                    if check_anno(anno['utf8_string']):
-                        annotations.append(anno)
-                else:
-                    if anno['language'] == 'english':
-                        annotations.append(anno)
+                    anno['overlap'] = get_overlap_vec(anno, objects)
+                    anno['scene'] = get_scene_vec(objects)
+
+                    # If set == check annotation is a model compatible string (legal characters, <25 length etc...), if val just check language is english
+                    if set == 'train':
+                        if check_anno(anno['utf8_string']):
+                            annotations.append(anno)
+                    else:
+                            annotations.append(anno)
 
     return annotations
 
@@ -249,6 +250,14 @@ def get_sample(anno):
     return img, label, padded_overlap, padded_scene
     
 def check_anno(anno_text):
+    if len(anno_text) > 25:
+        return False
+
+    for i in anno_text:
+        if i not in config.CHARS:
+            return False
+
+    return True
     return anno_text == anno_text.strip().translate({ord(c): None for c in string.printable[-6:]+'/°-'})[0:25]#string.printable[-38:]+'°'})[0:25]
 
 def get_overlap_vec(anno, objects):

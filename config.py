@@ -11,7 +11,7 @@ PRIMARY_DEVICE = 'cuda:' + str(DEVICE_IDS[0])
 EXPERIMENT = 'TextOCR_basicTF_from_scratch'
 
 # Pretained model to use
-SAVED_MODEL = './results/models/no_pretrained_oscar_encoder_from_scratch.pt'#'./results/models/scratch.pt'#
+SAVED_MODEL = './results/models/scratch.pt'#./results/models/no_pretrained_oscar_encoder_from_scratch.pt'#'./results/models/scratch.pt'#
 
 RANDOM_SEED = 999
 BATCH_SIZE = 192
@@ -56,10 +56,14 @@ MULTIHEAD_POST_MEMORY = False
  Local paths
 '''
 # COCO text json file path
-COCO_TEXT_API_PATH = './annotations/COCO_Text_2014.json'
+COCOTEXT_API_PATH = './annotations/COCO_Text_2014.json'
 # COCO train 2014 image folder path
-IMAGE_PATH = "/data_ssd1/jplacidi/coco_data/images/train2014/"
+COCOTEXT_IMAGE_PATH = "/data_ssd1/jplacidi/coco_data/images/train2014/"
+
 # Deep Text dataset folders
 DEEP_TEXT_DATASET_PATH = "/data_ssd1/jplacidi/deep_text_datasets/"
+
 # TextOCR path to folder containing train, val and test .jsons
-TEXTOCR_PATH = "/data_ssd1/jplacidi/TextOCR/"
+TEXTOCR_ANNO_PATH = "/data_ssd1/jplacidi/TextOCR/"
+# TextOCR image path
+TEXTOCR_IMAGE_PATH = "/data_ssd1/jplacidi/TextOCR/"
