@@ -43,7 +43,7 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
         filtered_parameters.append(p)
         params_num.append(np.prod(p.size()))
 
-    optimizer = optim.AdamW(filtered_parameters, lr=0.00001)
+    optimizer = optim.AdamW(filtered_parameters, lr=0.0001)
     #scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=10, gamma=0.1)
 
     df = pd.DataFrame(columns=['iter','cost_avg','val_acc','train_acc'])
@@ -56,7 +56,7 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
 
     print('--- Training for ' + str(epochs) + ' epochs. Number of parameters:', sum(params_num))
 
-    val_acc = 0#validate(model, validation_dataloader, print_samples=True)
+    val_acc = validate(model, validation_dataloader, print_samples=True)
 
 
     df = df.append({'iter': '0', 'cost_avg':'n/a', 'val_acc':val_acc, 'train_acc':'n/a'}, ignore_index=True)

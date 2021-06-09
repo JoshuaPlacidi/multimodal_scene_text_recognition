@@ -1,7 +1,7 @@
 import string
 
 # Set cuda devices to use
-DEVICE_IDS=[0,1]
+DEVICE_IDS=[0,1,2,3,4]
 PRIMARY_DEVICE = 'cuda:' + str(DEVICE_IDS[0])
 
 '''
