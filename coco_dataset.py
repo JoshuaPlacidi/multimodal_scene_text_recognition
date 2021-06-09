@@ -18,6 +18,28 @@ import time
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
+class TextOCR_Dataset(Dataset):
+    def __init__(self, set='train'):
+        self.annotations = []
+        self.to_tensor = transforms.ToTensor()
+        self.resize = transforms.Resize((32,100))    
+
+        # Load annotations
+        self.annotations = get_cocotext_annos(set)
+                       
+    def __len__(self):
+        return len(self.annotations)
+    
+    def __getitem__(self, index):
+
+        # load sample
+        anno = self.annotations[index]
+        img, label, overlap, scene = get_sample(anno)
+        img = self.resize(img)
+        img = self.to_tensor(img)
+
+        return img, label, overlap, scene
+
 class COCOText_Dataset(Dataset):
     def __init__(self, set='train'):
         self.annotations = []
@@ -136,6 +158,49 @@ def get_cocotext_annos(set):
                 else:
                     anno['overlap'] = None
                     anno['scene'] = None
+
+                # If set == check annotation is a model compatible string (legal characters, <25 length etc...), if val just check language is english
+                if set == 'train':
+                    if check_anno(anno['utf8_string']):
+                        annotations.append(anno)
+                else:
+                    if anno['language'] == 'english':
+                        annotations.append(anno)
+
+    return annotations
+
+def get_textocr_annos(set):
+    if set == 'train':
+        anno_path = config.TEXTOCR_PATH + "TextOCR_train.json"
+    elif set == 'val':
+        anno_path = config.TEXTOCR_PATH + "TextOCR_val.json"
+    elif set == 'test':
+        anno_path = config.TEXTOCR_PATH + "TextOCR_test.json"
+    else:
+        raise Exception("TextOCR set:", set, "not recognized")
+
+    # Open text annotations
+    with open(anno_path) as f:
+        text_annotations = json.load(f)    
+
+    with open('./annotations/features/open_images_vinvl_features.json') as object_annotations: # Load object features
+        object_annotations = json.load(object_annotations)
+
+    annotations = []
+
+    for _, anno in tqdm(text_annotations['anns'].items()):
+        if anno['legibility'] == 'legible': # If annotation is legibile
+
+            image = text_annotations["imgs"][anno["image_id"]] # Load annotation image data
+
+            if image['set'] == set: # Check if in train or val set
+                
+                # Load and set annotations image path and its scene and overlap data
+                anno['img_path'] = config.IMAGE_PATH + image['file_name']
+                objects = object_annotations[str(anno['image_id'])]["vinvl"]
+
+                anno['overlap'] = get_overlap_vec(anno, objects)
+                anno['scene'] = get_scene_vec(objects)
 
                 # If set == check annotation is a model compatible string (legal characters, <25 length etc...), if val just check language is english
                 if set == 'train':

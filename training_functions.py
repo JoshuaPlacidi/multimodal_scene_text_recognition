@@ -39,7 +39,7 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
         filtered_parameters.append(p)
         params_num.append(np.prod(p.size()))
 
-    optimizer = optim.AdamW(filtered_parameters, lr=0.0001)
+    optimizer = optim.AdamW(filtered_parameters, lr=0.00001)
     #scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=10, gamma=0.1)
 
     df = pd.DataFrame(columns=['iter','cost_avg','val_acc','train_acc'])

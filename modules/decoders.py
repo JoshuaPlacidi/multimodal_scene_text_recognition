@@ -123,14 +123,19 @@ class TF_Decoder(nn.Module):
         if config.PRE_DECODER_MLP:
             self.relevant_mlp = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=1, num_layers=3)
             self.combine_mlp = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=config.EMBED_DIM, num_layers=2)
-        #self.to_hid = nn.Linear((512+64), 512)
+        
+        if config.CLS_DECODER_INIT:
+            self.sem_cls = True
+            self.sem_cls_mlp = MLP(input_size=(config.EMBED_DIM*2), hidden_size=config.EMBED_DIM, num_classes=1, num_layers=3)
+        else:
+            self.sem_cls = False
 
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
 
-    def get_relevant_semantic(self, feats, sem_vec, is_train):
+    def get_relevant_semantic(self, feats, sem_vec, mlp, is_train):
         sem_seq_len = sem_vec.shape[1]  # Number of objects
         col_seq_len = feats.shape[1]    # Number of visual cols
 
@@ -140,7 +145,7 @@ class TF_Decoder(nn.Module):
 
         col_and_sem = torch.cat((col_seq, sem_seq), dim=3)
 
-        scores = self.relevant_mlp(col_and_sem)
+        scores = mlp(col_and_sem)
         scores = nn.functional.softmax(scores, dim=2)
         
         relevant_sem = sem_seq * scores
@@ -161,6 +166,15 @@ class TF_Decoder(nn.Module):
             obj_scores = [(round(j*100,2)) for j in scores[i]][:min(sem_seq_len,25)]
             df = df.append(pd.Series(obj_scores, index=cols), ignore_index=True)
         print(df)
+
+    def get_semantic_cls(self, feats, sem_vec, is_train):
+        #print(feats.shape, sem_vec.shape)
+        relevant_sem = self.get_relevant_semantic(feats, sem_vec, self.sem_cls_mlp, is_train)
+        weighted_sem = nn.functional.softmax(relevant_sem, dim=1)
+
+        semantic_cls = torch.sum(weighted_sem, dim=1)
+        return semantic_cls
+
         
 
     def forward(self, encoder_output, text, semantics, is_train):
@@ -168,9 +182,10 @@ class TF_Decoder(nn.Module):
         memory = self.hid_to_emb(encoder_output)
 
         if config.PRE_DECODER_MLP:
-            relevant_semantic = self.get_relevant_semantic(memory, semantics, is_train)
+            relevant_semantic = self.get_relevant_semantic(memory, semantics, self.relevant_mlp, is_train)
             combined = torch.cat((memory, relevant_semantic), dim=2)
             memory = memory + self.combine_mlp(combined)
+
 
         memory = memory.permute(1,0,2)
 
@@ -181,7 +196,11 @@ class TF_Decoder(nn.Module):
             targets = targets.permute(1,0)
             
             emb_targets = self.emb(targets)
-            #emb_targets[0] = cls_overlap
+
+            if self.sem_cls:
+                sem_cls = self.get_semantic_cls(memory.permute(1,0,2), semantics, is_train)
+                emb_targets[0,:,:] = sem_cls
+
             emb_targets = self.pos_encoder(emb_targets)
 
             # generate target mask and pass to decoder
@@ -205,7 +224,11 @@ class TF_Decoder(nn.Module):
                 
                 # convert targets into embeddings and apply positional encoding
                 emb_targets = self.emb(targets.long())
-                #emb_targets[0] = cls_overlap
+
+                if self.sem_cls:
+                    sem_cls = self.get_semantic_cls(memory.permute(1,0,2), semantics, is_train)
+                    emb_targets[0,:,:] = sem_cls
+
                 emb_targets = self.pos_encoder(emb_targets)
                 
                 # pass embed targets and encoder memory to decoder

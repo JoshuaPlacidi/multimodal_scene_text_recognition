@@ -41,7 +41,7 @@ class Oscar_Bert(nn.Module):
     def __init__(self):
         super(Oscar_Bert, self).__init__()
         self.bert_config = BertConfig()
-        self.bert_model = BertModel(self.bert_config).from_pretrained('bert-base-uncased')
+        self.bert_model = BertModel(self.bert_config)#.from_pretrained('bert-base-uncased')
 
         self.hid_to_bert = nn.Linear(512, 768)
         self.bert_to_hid = nn.Linear(768, 512)
@@ -87,6 +87,8 @@ class TF_Encoder(nn.Module):
             # Multi-layer perceptron to map from (hid dim + emb dim) back to hid dim
             self.combine_mlp = MLP(input_size=(config.HIDDEN_DIM + config.EMBED_DIM), hidden_size=config.HIDDEN_DIM, num_classes=config.HIDDEN_DIM, num_layers=3)
 
+            self.gate = MLP(input_size=config.HIDDEN_DIM, hidden_size=config.HIDDEN_DIM, num_classes=1)
+
     def get_relevant_semantic(self, feats, sem_vec, is_train):
         sem_seq_len = sem_vec.shape[1]  # Number of objects
         col_seq_len = feats.shape[1]    # Number of visual cols
@@ -127,7 +129,13 @@ class TF_Encoder(nn.Module):
             combined = torch.cat((col_feats, rel_semantics), dim=2)
             rel_semantics = self.combine_mlp(combined)
 
-            input = col_feats + rel_semantics
+            gate_score = self.gate(col_feats)
+            gate_score = torch.sigmoid(gate_score)
+
+            # if str(col_feats.device)[-1] == config.PRIMARY_DEVICE[-1]:
+            #     print(gate_score[0])
+
+            input = col_feats + (gate_score * rel_semantics)
         else:
             input = col_feats
 

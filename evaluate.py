@@ -22,7 +22,7 @@ converter = AttnLabelConverter(character)
 
 import string
 
-from coco_dataset import LmdbDataset, get_val_data
+from coco_dataset import LmdbDataset, get_cocotext_single_image_data
 
 from PIL import Image
 from io import StringIO
@@ -32,7 +32,7 @@ import numpy as np
 import time
 
 
-saved_model = './results/models/pre_memory_mlp_scene_vinvl_resize_linear.pt'
+saved_model = './results/models/pre_encoder_mlp_overlap_vinvl_resize_linear.pt'
 
 model = get_model(saved_model)
 model.eval()
@@ -112,7 +112,7 @@ with open('./results/base_error_ids.txt') as f:
 corrections = 0
 total = 0
 
-val_data = get_val_data(return_loader=False)
+val_data = get_cocotext_single_image_data(return_loader=False)
 print('  - Running evaluation on', len(val_data), 'images')
 
 with torch.no_grad():
@@ -147,13 +147,14 @@ with torch.no_grad():
             pred_str = converter.decode(pred_index, length_for_pred)[0]
             pred_str = pred_str[:pred_str.find('[s]')]
 
-            print(overlap_tags)
-            print(pred_str)
-            print(label)
+            # print(overlap_tags)
+            # print(pred_str)
+            # print(label)
 
             if label == pred_str:
-                print('  - Correction\n')
                 corrections += 1
+                print(label, pred_str)
+                print('  - Correction!\n', round(corrections*100/total,3))
                 #time.sleep(15)
                 #corrections.append(anno)
             total += 1

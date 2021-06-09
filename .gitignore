@@ -19,3 +19,5 @@ base.pth
 annotations/features/object_tags.json
 annotations/error_anno_ids.txt
 scratch.pt
+annotations/features/coco_object_tags.json
+annotations/features/open_images_vinvl_features.json
