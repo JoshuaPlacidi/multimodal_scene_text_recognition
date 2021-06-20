@@ -130,12 +130,18 @@ class TF_Decoder(nn.Module):
         else:
             self.sem_cls = False
 
+        if config.POST_DECODER_MLP:
+            self.post_decoder_mlp = MLP(input_size=(num_classes*2), hidden_size=num_classes, num_classes=1, num_layers=3)
+            self.post_deocer_combine_mlp = MLP(input_size=(num_classes*2), hidden_size=num_classes, num_classes=num_classes, num_layers=3)#
+            self.sem_to_classes = nn.Linear(config.EMBED_DIM, num_classes)
+
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
 
     def get_relevant_semantic(self, feats, sem_vec, mlp, is_train):
+        #print(feats.shape, sem_vec.shape)
         sem_seq_len = sem_vec.shape[1]  # Number of objects
         col_seq_len = feats.shape[1]    # Number of visual cols
 
@@ -207,6 +213,13 @@ class TF_Decoder(nn.Module):
             target_mask = self._generate_square_subsequent_mask(config.MAX_TEXT_LENGTH+1).to(encoder_output.device)
             output = self.decoder(tgt=emb_targets, memory=memory, semantics=semantics, tgt_mask=target_mask, is_train=is_train)
 
+            # if config.POST_DECODER_MLP:
+            #     relevant_semantic = self.get_relevant_semantic(output.permute(1,0,2), semantics, self.post_decoder_mlp, is_train)
+            #     #print(relevant_semantic.shape, t_output.shape)
+            #     combined = torch.cat((output.permute(1,0,2), relevant_semantic), dim=2)
+            #     #print(combined.shape)
+            #     output = output + self.post_deocer_combine_mlp(combined).permute(1,0,2)
+
             # map embeding dim to number of classes
             output = self.emb_to_classes(output)
 
@@ -234,6 +247,13 @@ class TF_Decoder(nn.Module):
                 # pass embed targets and encoder memory to decoder
                 t_output = self.decoder(tgt=emb_targets[:t+1], memory=memory, semantics=semantics, tgt_mask=target_mask, is_train=is_train)
 
+                # if config.POST_DECODER_MLP:
+                #     relevant_semantic = self.get_relevant_semantic(t_output.permute(1,0,2), semantics, self.post_decoder_mlp, is_train)
+                #     #print(relevant_semantic.shape, t_output.shape)
+                #     combined = torch.cat((t_output.permute(1,0,2), relevant_semantic), dim=2)
+                #     #print(combined.shape)
+                #     t_output = t_output + self.post_deocer_combine_mlp(combined).permute(1,0,2)
+
                 # map embeding dim to number of classes
                 t_output = self.emb_to_classes(t_output)
 
@@ -243,6 +263,14 @@ class TF_Decoder(nn.Module):
                 output[t,:] = t_output[t]
 
         output = output.permute(1,0,2)
+
+        if config.POST_DECODER_MLP:
+            semantics = self.sem_to_classes(semantics)
+            relevant_semantic = self.get_relevant_semantic(output, semantics, self.post_decoder_mlp, is_train)
+            #print(relevant_semantic.shape, t_output.shape)
+            combined = torch.cat((output, relevant_semantic), dim=2)
+            #print(combined.shape)
+            output = output + self.post_deocer_combine_mlp(combined)
 
         return output
 

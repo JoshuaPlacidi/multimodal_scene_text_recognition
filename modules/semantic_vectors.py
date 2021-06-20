@@ -6,7 +6,7 @@ import torch.nn.functional as F
 torch.backends.cudnn.enabled = False
 
 import config
-
+import time
 
 class Linear_Embedding(nn.Module):
     '''
@@ -16,25 +16,30 @@ class Linear_Embedding(nn.Module):
     def __init__(self):
         super(Linear_Embedding, self).__init__()
 
+        self.num_obj_classes = 2000
+
         if config.SEMANTIC_VECTOR == 'overlap' or config.SEMANTIC_VECTOR == 'scene':
-            self.embed = nn.Embedding(2000, config.EMBED_DIM)
+            self.embed = nn.Embedding(self.num_obj_classes, config.EMBED_DIM)
             
         elif config.SEMANTIC_VECTOR == 'combined':
-            self.overlap_embed = nn.Embedding(2000, config.EMBED_DIM)
-            self.scene_embed = nn.Embedding(2000, config.EMBED_DIM)
+            self.overlap_embed = nn.Embedding(self.num_obj_classes, config.EMBED_DIM)
+            self.scene_embed = nn.Embedding(self.num_obj_classes, config.EMBED_DIM)
             self.combine = nn.Linear((config.EMBED_DIM*2), config.EMBED_DIM)
 
         else:
             raise Exception("Config: SEMANTIC_VECTOR invalid value: " + config.SEMANTIC_VECTOR)
 
 
-    def forward(self, overlap, scene):
+    def forward(self, overlap, scene, ious):
 
         if config.SEMANTIC_VECTOR == 'overlap':
             semantic = self.embed(overlap.long()).to(overlap.device)
 
         elif config.SEMANTIC_VECTOR == 'scene':
+            ious = nn.functional.softmax(ious, dim=1)
             semantic = self.embed(scene.long()).to(scene.device)
+            ious = ious.unsqueeze(-1)
+            semantic = semantic * ious
 
         elif config.SEMANTIC_VECTOR == 'combined':
             overlap_sem = self.embed(overlap.long()).to(overlap.device)

@@ -8,6 +8,8 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import BertTokenizer
 
+import numpy as np
+
 import coco_text
 import config
 
@@ -34,11 +36,11 @@ class TextOCR_Dataset(Dataset):
 
         # load sample
         anno = self.annotations[index]
-        img, label, overlap, scene = get_sample(anno)
+        anno_id, img, label, overlap, scene, ious = get_sample(anno)
         img = self.resize(img)
         img = self.to_tensor(img)
 
-        return img, label, overlap, scene
+        return anno_id, img, label, overlap, scene, ious
 
 def get_textocr_datasets():
     print('  - Loading data from TextOCR dataset')
@@ -70,11 +72,11 @@ class COCOText_Dataset(Dataset):
 
         # load sample
         anno = self.annotations[index]
-        img, label, overlap, scene = get_sample(anno)
+        anno_id, img, label, overlap, scene, ious = get_sample(anno)
         img = self.resize(img)
         img = self.to_tensor(img)
 
-        return img, label, overlap, scene
+        return anno_id, img, label, overlap, scene, ious
 
 class COCOText_Validation_Dataset(Dataset):
     def __init__(self, set='val'):
@@ -142,21 +144,28 @@ def get_synth_datasets():
     print('  - ' + str(len(val_loader)) + ' val batches')
     return train_loader, val_loader
 
-def get_cocotext_annos(set):
+def get_cocotext_annos(set, anno_list=None):
     # Open COCO-Text api
     ct = coco_text.COCO_Text(config.COCOTEXT_API_PATH)
 
     # Open text annotations
-    with open(config.COCO_TEXT_API_PATH) as f:
+    with open(config.COCOTEXT_API_PATH) as f:
         text_annotations = json.load(f)    
 
-    with open('./annotations/features/object_tags.json') as object_annotations: # Load object features
+    with open('./annotations/features/coco_object_tags.json') as object_annotations: # Load object features
         object_annotations = json.load(object_annotations)
 
     annotations = []
 
     for _, anno in tqdm(text_annotations['anns'].items()):
-        if anno['legibility'] == 'legible': # If annotation is legibile
+
+        load_anno = True
+        if anno_list:
+            if anno['id'] not in anno_list:
+                load_anno = False
+
+
+        if load_anno and anno['legibility'] == 'legible': # If annotation is legibile
 
             image = ct.loadImgs(ids=anno['image_id']) # Load annotation image data
 
@@ -168,7 +177,7 @@ def get_cocotext_annos(set):
 
                 if config.SEMANTIC_SOURCE == 'coco' or config.SEMANTIC_SOURCE == 'vg' or config.SEMANTIC_SOURCE == 'vinvl':
                     anno['overlap'] = get_overlap_vec(anno, objects)
-                    anno['scene'] = get_scene_vec(objects)
+                    anno['scene'], anno['ious'] = get_scene_vec(anno, objects)
                 else:
                     anno['overlap'] = None
                     anno['scene'] = None
@@ -216,7 +225,7 @@ def get_textocr_annos(set):
                     objects = object_annotations[str(anno['image_id'])]["vinvl"]
 
                     anno['overlap'] = get_overlap_vec(anno, objects)
-                    anno['scene'] = get_scene_vec(objects)
+                    anno['scene'], anno['rel_coords'] = get_scene_vec(anno, objects)
 
                     # If set == check annotation is a model compatible string (legal characters, <25 length etc...), if val just check language is english
                     if set == 'train':
@@ -235,6 +244,7 @@ def get_sample(anno):
 
     padded_overlap = torch.zeros(15)
     padded_scene = torch.zeros(52)
+    padded_ious = torch.ones(52) * -1000
 
     if anno['overlap']:
         overlap = torch.LongTensor(anno['overlap'])
@@ -246,8 +256,10 @@ def get_sample(anno):
         scene_len = len(anno['scene'])
         padded_scene[:scene_len] = scene
 
+        #ious = torch.FloatTensor(anno['ious'])
+        #padded_ious[:scene_len] = ious
 
-    return img, label, padded_overlap, padded_scene
+    return anno['id'], img, label, padded_overlap, padded_scene, padded_ious
     
 def check_anno(anno_text):
     if len(anno_text) > 25:
@@ -277,15 +289,44 @@ def get_overlap_vec(anno, objects):
 
     return overlap_vec
 
-def get_scene_vec(objects):
-    scene_vec = []
+def get_scene_vec(anno, objects):
+    scene_objects = []
+    rel_scores = []
+
+    #anno_bb = get_bb_coords(anno['bbox'])
     for obj in objects:
         obj_class = obj['class'] + 1
-        if obj_class not in scene_vec:
-            scene_vec.append(obj_class)
-    if len(scene_vec) != len(set(scene_vec)):
+        if obj_class not in scene_objects:
+            scene_objects.append(obj_class)
+            #obj_bb = get_bb_coords(obj['bbox'])
+            #relative_coords = [abs(a_i - b_i) for a_i, b_i in zip(anno_bb, obj_bb)]
+            #iou_scores.append(relative_coords)
+            # print(1/get_relative_distance(anno, obj), get_relative_distance(anno, obj))
+            # time.sleep(5)
+            dist = 1#get_iou_score(anno, obj)#(1 / get_relative_distance(anno, obj))
+            rel_scores.append(dist)
+
+    if len(scene_objects) != len(set(scene_objects)):
         print('Scene error')
-    return scene_vec
+
+    return scene_objects, rel_scores
+
+def get_relative_distance(text, object):
+    text_bb = np.array(get_bb_coords(text['bbox']))
+    object_bb = np.array(get_bb_coords(object['bbox']))
+
+    dist_1 = np.linalg.norm(text_bb[:2]-object_bb[:2])
+    dist_2 = np.linalg.norm(text_bb[2:]-object_bb[2:])
+
+    rel_distance = (dist_1 + dist_2) / 2
+
+    return rel_distance
+
+def get_bb_coords(box):
+    bb = box.copy()
+    bb[2] = bb[2] + bb[0]
+    bb[3] = bb[3] + bb[1]
+    return bb
 
 def get_bert_tokens(anno, classes, max_length, sequence_pad, key, encode_frequency=False):
     sentence = ""
@@ -318,17 +359,22 @@ def overlap_resize(text, obj):
         return False
 
 from shapely.geometry import Polygon
-def overlap_iou(text, obj, threshold):
-    #def insertion_over_area(text, obj, percent):
+def get_iou_score(text, obj):
     text_poly = Polygon(get_all_coords(text['bbox']))
     obj_poly = Polygon(get_all_coords(obj['bbox']))
-    insert = text_poly.intersection(obj_poly).area
-    if insert > 0:
-        insert_over_area = insert / (text['bbox'][2] * text['bbox'][3]) # insertion of text bb and obj bb / area of text bb
-        #print(insert_over_area)
-        if insert_over_area >= threshold: 
-            return True
-    return False
+
+    insertion = text_poly.intersection(obj_poly).area
+
+    #x = insertion / (text['bbox'][2] * text['bbox'][3])
+    #x = max(x, 0.1)
+    union = text_poly.union(obj_poly).area
+    x = insertion / union
+
+    return x + 1# iou
+
+def overlap_iou(text, obj, threshold):
+    iou_score = get_iou_score(text, obj)
+    return iou_score >= threshold
 
 def get_all_coords(coord_array):
     x1 = coord_array[0]

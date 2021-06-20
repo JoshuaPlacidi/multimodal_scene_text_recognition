@@ -82,7 +82,7 @@ class Model(nn.Module):
             raise Exception("Model.py Decoder Error: '" + config.DECODER + "' not recognized")
 
 
-    def forward(self, input, text, overlap, scene, is_train=True):
+    def forward(self, input, text, overlap, scene, ious, is_train=True):
 
         # Transformation
         input = self.Transformation(input)
@@ -93,7 +93,7 @@ class Model(nn.Module):
         visual_features = visual_features.squeeze(3)
 
         # Semantic Vectors
-        semantics = self.get_semantic_vectors(overlap, scene)
+        semantics = self.get_semantic_vectors(overlap, scene, ious)
         
         # Encode
         if config.ENCODER == 'LSTM':

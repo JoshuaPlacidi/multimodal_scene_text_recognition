@@ -75,7 +75,7 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
         print('  - Epoch: ' + str(epoch+1))
 
 
-        for image, text, overlap, scene in tqdm(train_dataloader):
+        for anno_id, image, text, overlap, scene, ious in tqdm(train_dataloader):
             # Put samples on devices
             image = image.to(config.PRIMARY_DEVICE)
             overlap = overlap.to(config.PRIMARY_DEVICE)   
@@ -85,7 +85,7 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
             encoded_text, _ = converter.encode(text, batch_max_length=config.MAX_TEXT_LENGTH)
 
             # Pass samples through model
-            preds = model(image, encoded_text[:, :-1], overlap, scene)
+            preds = model(image, encoded_text[:, :-1], overlap, scene, ious)
 
             target = encoded_text[:, 1:]  # without [GO] Symbol
             cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
@@ -136,14 +136,18 @@ def train(model, dataset, validation_steps=100, iteration_limit=None):
                     total = 0
                 print(df)
             if iteration_limit:
-                if iteration == iteration_limit:
+                if iteration >= iteration_limit:
                     print('--- Iteration limit reach:', iteration)
 
             
 
     print('--- Finished Training')
 
-def validate(model, validation_dataloader, print_samples=False):
+def run_validation(model, dataset):
+    _, val_dataset = get_dataset(dataset)
+    return validate(model, val_dataset, True, True)
+
+def validate(model, validation_dataloader, print_samples=False, return_dataframe=False):
     print('  - Running Validation')
     model.eval()
 
@@ -152,12 +156,16 @@ def validate(model, validation_dataloader, print_samples=False):
 
     converter = AttnLabelConverter(config.CHARS)
 
+    if return_dataframe:
+        pred_df = pd.DataFrame()
+
     with torch.no_grad():
-        for image, text, overlap, scene in tqdm(validation_dataloader):
+        for anno_id, image, text, overlap, scene, ious in tqdm(validation_dataloader):
             # Put samples on device
             image = image.to(config.PRIMARY_DEVICE)
             overlap = overlap.to(config.PRIMARY_DEVICE)
             scene = scene.to(config.PRIMARY_DEVICE)
+            ious = ious.to(config.PRIMARY_DEVICE)
 
             length_for_pred = torch.IntTensor([config.MAX_TEXT_LENGTH] * len(image)).to(config.PRIMARY_DEVICE)
 
@@ -165,26 +173,39 @@ def validate(model, validation_dataloader, print_samples=False):
             text_for_pred = torch.LongTensor(config.BATCH_SIZE, config.MAX_TEXT_LENGTH + 1).fill_(0).to(config.PRIMARY_DEVICE)
 
             # Pass samples through model
-            preds = model(image, text_for_pred, overlap, scene, is_train=False)
+            preds = model(image, text_for_pred, overlap, scene, ious, is_train=False)
 
             _, preds_index = preds.max(2)
             preds_str = converter.decode(preds_index, length_for_pred)
 
             if print_samples:
                 print('  - Ground truth:', text[0])
-                print('  - Prediction:  ', preds_str[0], '\n\n')
+                pred_EOS = preds_str[0].find('[s]')
+                print('  - Prediction:  ', preds_str[0][:pred_EOS], '\n')
 
-            for text, pred in zip(text, preds_str):
+            for anno_id, text, pred in zip(anno_id, text, preds_str):
 
                 pred_EOS = pred.find('[s]')
                 pred = pred[:pred_EOS]  # prune after "end of sentence" token ([s])
+                
+                correct_prediction = False
 
                 if text == str(pred):
                     correct += 1
+                    correct_prediction = True
+
+                if return_dataframe:
+                    pred_df = pred_df.append({'anno_id':anno_id.item(), 'ground_truth':text, 'prediction':pred, 'correct':correct_prediction}, ignore_index=True)
 
                 total += 1
 
-    return round(correct*100/total,5)
+    score = round(correct*100/total, 5)
+
+    if return_dataframe:
+        return score, pred_df
+    else:
+        return score
+
 
 def evaluate(model, print_sem=False):
     print('--- Running Evaluation')

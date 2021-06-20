@@ -79,6 +79,7 @@ class TF_Encoder(nn.Module):
         self.layer_norm = nn.LayerNorm(config.HIDDEN_DIM)
         self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=6, norm=self.layer_norm)
 
+
         if config.PRE_ENCODER_MLP:
 
             # Multi-layer perceptron to calculate object relevance scores
@@ -87,7 +88,7 @@ class TF_Encoder(nn.Module):
             # Multi-layer perceptron to map from (hid dim + emb dim) back to hid dim
             self.combine_mlp = MLP(input_size=(config.HIDDEN_DIM + config.EMBED_DIM), hidden_size=config.HIDDEN_DIM, num_classes=config.HIDDEN_DIM, num_layers=3)
 
-            self.gate = MLP(input_size=config.HIDDEN_DIM, hidden_size=config.HIDDEN_DIM, num_classes=1)
+            self.emb_to_hid = nn.Linear(config.EMBED_DIM, config.HIDDEN_DIM, bias=False)
 
     def get_relevant_semantic(self, feats, sem_vec, is_train):
         sem_seq_len = sem_vec.shape[1]  # Number of objects
@@ -129,13 +130,7 @@ class TF_Encoder(nn.Module):
             combined = torch.cat((col_feats, rel_semantics), dim=2)
             rel_semantics = self.combine_mlp(combined)
 
-            gate_score = self.gate(col_feats)
-            gate_score = torch.sigmoid(gate_score)
-
-            # if str(col_feats.device)[-1] == config.PRIMARY_DEVICE[-1]:
-            #     print(gate_score[0])
-
-            input = col_feats + (gate_score * rel_semantics)
+            input = col_feats + rel_semantics#self.emb_to_hid(rel_semantics)
         else:
             input = col_feats
 

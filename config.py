@@ -1,17 +1,17 @@
 import string
 
 # Set cuda devices to use
-DEVICE_IDS=[0,1,2,3,4]
+DEVICE_IDS=[1]
 PRIMARY_DEVICE = 'cuda:' + str(DEVICE_IDS[0])
 
 '''
  Experiment paramenters
 '''
 # Name of experiement (used to save files)
-EXPERIMENT = 'TextOCR_basicTF_from_scratch'
+EXPERIMENT = 'TextOCR_PreEncoder_Overlap'
 
 # Pretained model to use
-SAVED_MODEL = './results/models/scratch.pt'#./results/models/no_pretrained_oscar_encoder_from_scratch.pt'#'./results/models/scratch.pt'#
+SAVED_MODEL = './results/models/scratch.pt'#'./results/models/TextOCR_base_from_scratch.pt'#
 
 RANDOM_SEED = 999
 BATCH_SIZE = 192
@@ -50,6 +50,7 @@ CLS_DECODER_INIT = False
 MULTIHEAD_PRE_TARGET = False
 MULTIHEAD_PRE_MEMORY = False
 MULTIHEAD_POST_MEMORY = False
+POST_DECODER_MLP = False
 
 
 '''

@@ -15,7 +15,7 @@ import torch
 torch.manual_seed(config.RANDOM_SEED)
 
 from model import get_model
-from training_functions import train, validate, evaluate
+from training_functions import train, validate, evaluate, run_validation
 
 print('--- Experiment: ' + config.EXPERIMENT)
 print('  - Encoder:', config.ENCODER)
@@ -30,4 +30,9 @@ print('  - Devices:', config.DEVICE_IDS)
 # Train
 model = get_model(config.SAVED_MODEL)
 
-train(model=model, dataset='textocr', validation_steps=500, iteration_limit=None)
+train(model=model, dataset='textocr', validation_steps=2000, iteration_limit=None)
+
+# score, results_df = run_validation(model=model, dataset='cocotext')
+# print(score)
+# print(results_df.head())
+# results_df.to_csv('./results/val_df.csv')
